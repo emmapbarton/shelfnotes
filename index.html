@@ -493,6 +493,47 @@
   .inline-tag { background: var(--sienna); color: #fff; border-radius: 4px; padding: 0.15rem 0.45rem; font-size: 0.72rem; display: flex; align-items: center; gap: 0.25rem; }
   .inline-tag button { background: none; border: none; color: rgba(255,255,255,0.7); cursor: pointer; font-size: 0.75rem; padding: 0; }
 
+  /* ── RICH EDITOR ── */
+  .rich-editor-wrap { border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); overflow: hidden; }
+  .rich-toolbar {
+    display: flex;
+    gap: 2px;
+    padding: 0.4rem 0.5rem;
+    background: var(--cream);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .rich-toolbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+  .tb-btn {
+    width: 28px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: 1px solid transparent; border-radius: 4px;
+    cursor: pointer; font-size: 0.82rem; color: var(--ink);
+    transition: all 0.15s; font-family: serif;
+    padding: 0;
+  }
+  .tb-btn:hover { background: var(--border); }
+  .tb-btn.active { background: var(--sienna); color: #fff; border-color: var(--sienna); }
+  .tb-btn.highlight-btn { font-size: 0.75rem; }
+  .rich-editor {
+    min-height: 90px;
+    padding: 0.6rem 0.8rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.88rem;
+    line-height: 1.65;
+    color: var(--ink);
+    outline: none;
+  }
+  .rich-editor:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+  .rich-editor mark { background: #ffe066; color: inherit; border-radius: 2px; padding: 0 2px; }
+  .rich-editor ul { padding-left: 1.4em; }
+  .rich-editor ol { padding-left: 1.4em; }
+  /* note body rendered */
+  .note-body mark { background: #ffe066; color: inherit; border-radius: 2px; padding: 0 2px; }
+  .note-body ul { padding-left: 1.4em; }
+  .note-body ol { padding-left: 1.4em; }
+
   /* page input in-card */
   .page-input-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
   .page-input-row input { width: 70px; padding: 0.3rem 0.5rem; font-size: 0.85rem; }
@@ -662,11 +703,11 @@
   </div>
 </div>
 
-<!-- ADD NOTE MODAL -->
+<!-- ADD / EDIT NOTE MODAL -->
 <div class="modal-overlay" id="noteModal">
-  <div class="modal">
+  <div class="modal" style="max-width:780px">
     <div class="modal-header">
-      <span class="modal-title">Add Reading Note</span>
+      <span class="modal-title" id="noteModalTitle">Add Reading Note</span>
       <button class="btn btn-ghost btn-icon" onclick="closeModal('noteModal')" style="color:var(--paper)">✕</button>
     </div>
     <div class="modal-body">
@@ -679,29 +720,41 @@
           <label>Pages Read (e.g. 34–52)</label>
           <input type="text" id="note-pages" placeholder="34–52">
         </div>
-        <div class="form-group full">
-          <label>Key Ideas</label>
-          <textarea id="note-ideas" placeholder="- Quorum sensing coordinates bacterial behaviour&#10;- Biofilm formation makes antibiotics harder"></textarea>
-        </div>
-        <div class="form-group full">
-          <label>Questions</label>
-          <textarea id="note-questions" placeholder="- How does LasR compare to RhlR?"></textarea>
-        </div>
-        <div class="form-group full">
-          <label>Actions / Follow-ups</label>
-          <textarea id="note-actions" placeholder="- Look up one paper on QS inhibitors"></textarea>
-        </div>
-        <div class="form-group full">
-          <label>Concept Tags (press Enter to add)</label>
-          <div class="tag-input-wrap" id="tagInputWrap">
-            <input type="text" id="tagInput" placeholder="quorum sensing, biofilm…">
-          </div>
+      </div>
+
+      <!-- shared toolbar -->
+      <div class="rich-toolbar" id="richToolbar" style="margin-top:1rem;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none">
+        <button class="tb-btn" title="Bold" onmousedown="event.preventDefault();fmt('bold')"><b>B</b></button>
+        <button class="tb-btn" title="Italic" onmousedown="event.preventDefault();fmt('italic')"><i>I</i></button>
+        <button class="tb-btn" title="Underline" onmousedown="event.preventDefault();fmt('underline')"><u>U</u></button>
+        <div class="sep"></div>
+        <button class="tb-btn highlight-btn" title="Highlight" onmousedown="event.preventDefault();fmtHighlight()">▐HL</button>
+        <div class="sep"></div>
+        <button class="tb-btn" title="Bullet list" onmousedown="event.preventDefault();fmt('insertUnorderedList')">• ≡</button>
+        <button class="tb-btn" title="Numbered list" onmousedown="event.preventDefault();fmt('insertOrderedList')">1 ≡</button>
+        <div class="sep"></div>
+        <button class="tb-btn" title="Clear formatting" onmousedown="event.preventDefault();fmt('removeFormat')" style="font-size:0.7rem;width:auto;padding:0 6px">✕ fmt</button>
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:0 0 6px 6px;overflow:hidden;margin-bottom:1rem">
+        <div style="background:var(--cream);padding:0.3rem 0.8rem;font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">💡 Key Ideas</div>
+        <div class="rich-editor" id="note-ideas" contenteditable="true" data-placeholder="Quorum sensing coordinates group bacterial behaviour…"></div>
+        <div style="background:var(--cream);padding:0.3rem 0.8rem;font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">❓ Questions</div>
+        <div class="rich-editor" id="note-questions" contenteditable="true" data-placeholder="How does LasR compare to RhlR?"></div>
+        <div style="background:var(--cream);padding:0.3rem 0.8rem;font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">⚡ Actions / Follow-ups</div>
+        <div class="rich-editor" id="note-actions" contenteditable="true" data-placeholder="Look up one paper on QS inhibitors…"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Concept Tags (press Enter to add)</label>
+        <div class="tag-input-wrap" id="tagInputWrap">
+          <input type="text" id="tagInput" placeholder="quorum sensing, biofilm…">
         </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('noteModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveNote()">Save Note</button>
+      <button class="btn btn-primary" id="saveNoteBtn" onclick="saveNote()">Save Note</button>
     </div>
   </div>
 </div>
@@ -1101,9 +1154,10 @@ function renderDetailTab() {
       <div class="note-entry">
         <div class="note-header">
           <span class="note-date">📅 ${n.date}</span>
-          <div style="display:flex;align-items:center;gap:0.8rem">
+          <div style="display:flex;align-items:center;gap:0.6rem">
             ${n.pages?`<span class="note-pages">pp. ${escHtml(n.pages)}</span>`:''}
-            <button class="btn btn-sm" style="color:var(--rust);border-color:var(--rust)" onclick="deleteNote(${i})">Delete</button>
+            <button class="btn btn-sm" onclick="openEditNote('${n.id}')">Edit</button>
+            <button class="btn btn-sm" style="color:var(--rust);border-color:var(--rust)" onclick="deleteNote('${n.id}')">Delete</button>
           </div>
         </div>
         <div class="note-body">${formatNote(n)}</div>
@@ -1122,32 +1176,101 @@ function renderDetailTab() {
 }
 
 function formatNote(n) {
+  // notes now store HTML per field; legacy notes stored plain text
+  const field = (val) => val ? `<div style="margin-bottom:0.6rem">${val}</div>` : '';
   let out = '';
-  if(n.ideas) out += `<strong>Key Ideas</strong>\n${n.ideas}\n\n`;
-  if(n.questions) out += `<strong>Questions</strong>\n${n.questions}\n\n`;
-  if(n.actions) out += `<strong>Actions</strong>\n${n.actions}`;
-  return escHtml(out.trim());
+  if(n.ideas)     out += `<div style="font-size:0.72rem;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--sienna);margin-bottom:0.2rem">💡 Key Ideas</div>${field(n.ideas)}`;
+  if(n.questions) out += `<div style="font-size:0.72rem;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--slate);margin-bottom:0.2rem;margin-top:0.4rem">❓ Questions</div>${field(n.questions)}`;
+  if(n.actions)   out += `<div style="font-size:0.72rem;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--sage);margin-bottom:0.2rem;margin-top:0.4rem">⚡ Actions</div>${field(n.actions)}`;
+  return out || '<span style="color:var(--muted);font-size:0.85rem">No content.</span>';
 }
 
-function deleteNote(idx) {
+function deleteNote(noteId) {
   if(!confirm('Delete this note?')) return;
   const book = state.books.find(b=>b.id===currentBookId);
-  const sorted = [...(book.notes||[])].sort((a,z)=>z.date.localeCompare(a.date));
-  const note = sorted[idx];
-  book.notes = book.notes.filter(n=>n!==note);
+  book.notes = book.notes.filter(n=>n.id!==noteId);
   save();
   renderDetailTab();
 }
 
+// ─── RICH EDITOR ─────────────────────────────────────────
+let lastFocusedEditor = null;
+
+document.addEventListener('focusin', e => {
+  if(e.target.classList.contains('rich-editor')) lastFocusedEditor = e.target;
+});
+
+function fmt(cmd) {
+  if(lastFocusedEditor) lastFocusedEditor.focus();
+  document.execCommand(cmd, false, null);
+  updateToolbarState();
+}
+
+function fmtHighlight() {
+  if(lastFocusedEditor) lastFocusedEditor.focus();
+  // toggle: if selection is inside a mark, remove; otherwise wrap
+  const sel = window.getSelection();
+  if(!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  const parent = sel.anchorNode?.parentElement;
+  if(parent && parent.tagName==='MARK') {
+    // unwrap
+    const mark = parent;
+    const frag = document.createDocumentFragment();
+    while(mark.firstChild) frag.appendChild(mark.firstChild);
+    mark.parentNode.replaceChild(frag, mark);
+  } else {
+    const mark = document.createElement('mark');
+    try { range.surroundContents(mark); } catch(e) {
+      mark.appendChild(range.extractContents());
+      range.insertNode(mark);
+    }
+    sel.removeAllRanges();
+  }
+  updateToolbarState();
+}
+
+function updateToolbarState() {
+  ['bold','italic','underline'].forEach(cmd => {
+    const btn = document.querySelector(`.tb-btn[title="${cmd.charAt(0).toUpperCase()+cmd.slice(1)}"]`);
+    if(btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+  });
+}
+
+document.addEventListener('selectionchange', updateToolbarState);
+
 // ─── NOTE MODAL ──────────────────────────────────────────
+let editingNoteId = null;
+
 function openNoteModal() {
+  editingNoteId = null;
   pendingTags = [];
+  document.getElementById('noteModalTitle').textContent = 'Add Reading Note';
+  document.getElementById('saveNoteBtn').textContent = 'Save Note';
   document.getElementById('note-date').value = today();
   document.getElementById('note-pages').value = '';
-  document.getElementById('note-ideas').value = '';
-  document.getElementById('note-questions').value = '';
-  document.getElementById('note-actions').value = '';
-  document.getElementById('tagInput').value = '';
+  document.getElementById('note-ideas').innerHTML = '';
+  document.getElementById('note-questions').innerHTML = '';
+  document.getElementById('note-actions').innerHTML = '';
+  lastFocusedEditor = document.getElementById('note-ideas');
+  renderTagInputWrap();
+  openModal('noteModal');
+}
+
+function openEditNote(noteId) {
+  const book = state.books.find(b=>b.id===currentBookId);
+  const note = (book.notes||[]).find(n=>n.id===noteId);
+  if(!note) return;
+  editingNoteId = noteId;
+  pendingTags = [...(note.tags||[])];
+  document.getElementById('noteModalTitle').textContent = 'Edit Note';
+  document.getElementById('saveNoteBtn').textContent = 'Save Changes';
+  document.getElementById('note-date').value = note.date||today();
+  document.getElementById('note-pages').value = note.pages||'';
+  document.getElementById('note-ideas').innerHTML = note.ideas||'';
+  document.getElementById('note-questions').innerHTML = note.questions||'';
+  document.getElementById('note-actions').innerHTML = note.actions||'';
+  lastFocusedEditor = document.getElementById('note-ideas');
   renderTagInputWrap();
   openModal('noteModal');
 }
@@ -1172,20 +1295,25 @@ function removeTag(i) { pendingTags.splice(i,1); renderTagInputWrap(); }
 function saveNote() {
   const book = state.books.find(b=>b.id===currentBookId);
   if(!book) return;
-  // flush any unsubmitted tag
   const tagInp = document.getElementById('tagInput');
-  if(tagInp && tagInp.value.trim()) { pendingTags.push(tagInp.value.trim()); }
-  const note = {
-    id: uid(),
+  if(tagInp && tagInp.value.trim()) pendingTags.push(tagInp.value.trim());
+
+  const noteData = {
     date: document.getElementById('note-date').value || today(),
     pages: document.getElementById('note-pages').value.trim(),
-    ideas: document.getElementById('note-ideas').value.trim(),
-    questions: document.getElementById('note-questions').value.trim(),
-    actions: document.getElementById('note-actions').value.trim(),
+    ideas: document.getElementById('note-ideas').innerHTML.trim(),
+    questions: document.getElementById('note-questions').innerHTML.trim(),
+    actions: document.getElementById('note-actions').innerHTML.trim(),
     tags: [...pendingTags],
   };
-  if(!book.notes) book.notes = [];
-  book.notes.push(note);
+
+  if(editingNoteId) {
+    const idx = (book.notes||[]).findIndex(n=>n.id===editingNoteId);
+    if(idx>-1) Object.assign(book.notes[idx], noteData);
+  } else {
+    if(!book.notes) book.notes = [];
+    book.notes.push({ id: uid(), ...noteData });
+  }
   save();
   closeModal('noteModal');
   renderDetailTab();
@@ -1262,9 +1390,9 @@ function seedData() {
       supports: ['Essential Cell Biology', 'Lewin\'s Genes', 'Biochemistry by Berg'],
       notes: [{
         id: uid(), date: today(), pages: '320–340',
-        ideas: '- Signal transduction cascades amplify extracellular signals\n- Phosphorylation cascades are reversible and tightly regulated',
-        questions: '- How does cross-talk between MAPK and PI3K pathways occur?\n- What determines signal duration vs amplitude?',
-        actions: '- Read the EGFR pathway review in Cell 2020',
+        ideas: '<ul><li>Signal transduction cascades amplify extracellular signals</li><li>Phosphorylation cascades are reversible and tightly regulated</li></ul>',
+        questions: '<ul><li>How does cross-talk between MAPK and PI3K pathways occur?</li><li>What determines signal duration vs amplitude?</li></ul>',
+        actions: '<ul><li>Read the EGFR pathway review in <em>Cell</em> 2020</li></ul>',
         tags: ['signal transduction', 'phosphorylation', 'MAPK']
       }]
     },
@@ -1275,9 +1403,9 @@ function seedData() {
       supports: ['Cellular and Molecular Immunology by Abbas'],
       notes: [{
         id: uid(), date: today(), pages: '150–180',
-        ideas: '- T-cell activation requires two signals: TCR + co-stimulation\n- CTLA-4 competes with CD28 for B7 ligands',
-        questions: '- Why does CTLA-4 have higher affinity than CD28 for B7?\n- Is the two-signal model sufficient to explain peripheral tolerance?',
-        actions: '- Review checkpoint inhibitor mechanisms',
+        ideas: '<ul><li>T-cell activation requires two signals: TCR + co-stimulation</li><li><mark>CTLA-4 competes with CD28 for B7 ligands</mark></li></ul>',
+        questions: '<ul><li>Why does CTLA-4 have higher affinity than CD28 for B7?</li><li>Is the two-signal model sufficient to explain peripheral tolerance?</li></ul>',
+        actions: '<ul><li>Review checkpoint inhibitor mechanisms</li></ul>',
         tags: ['T cell', 'co-stimulation', 'CTLA-4', 'tolerance']
       }]
     },
@@ -1293,8 +1421,9 @@ function seedData() {
       supports: ['Principles of Neural Science by Kandel'],
       notes: [{
         id: uid(), date: '2026-04-10', pages: '820–857',
-        ideas: '- Long-term potentiation underlies synaptic plasticity in the hippocampus\n- NMDA receptors act as coincidence detectors',
-        questions: '- How does LTP relate to memory consolidation?', actions: '',
+        ideas: '<ul><li><strong>Long-term potentiation</strong> underlies synaptic plasticity in the hippocampus</li><li>NMDA receptors act as coincidence detectors</li></ul>',
+        questions: '<ul><li>How does LTP relate to memory consolidation?</li></ul>',
+        actions: '',
         tags: ['LTP', 'NMDA', 'hippocampus', 'memory']
       }]
     }
