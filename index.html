@@ -529,10 +529,50 @@
   .rich-editor mark { background: #ffe066; color: inherit; border-radius: 2px; padding: 0 2px; }
   .rich-editor ul { padding-left: 1.4em; }
   .rich-editor ol { padding-left: 1.4em; }
+  .rich-editor img { max-width: 100%; border-radius: 4px; margin: 0.4rem 0; display: block; border: 1px solid var(--border); cursor: pointer; }
+  .rich-editor img.selected { outline: 2px solid var(--sienna); outline-offset: 1px; }
+  /* resize widget */
+  #imgResizer {
+    display: none;
+    position: absolute;
+    pointer-events: none;
+    z-index: 50;
+  }
+  #imgResizer.visible { display: block; }
+  #imgResizer .r-border {
+    position: absolute; inset: 0;
+    border: 2px solid var(--sienna);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  #imgResizer .r-handle {
+    position: absolute;
+    width: 10px; height: 10px;
+    background: var(--sienna);
+    border-radius: 2px;
+    pointer-events: all;
+  }
+  #imgResizer .r-handle.se { bottom: -5px; right: -5px; cursor: se-resize; }
+  #imgResizer .r-handle.sw { bottom: -5px; left:  -5px; cursor: sw-resize; }
+  #imgResizer .r-handle.ne { top:    -5px; right: -5px; cursor: ne-resize; }
+  #imgResizer .r-handle.nw { top:    -5px; left:  -5px; cursor: nw-resize; }
+  #imgResizer .r-label {
+    position: absolute;
+    bottom: -22px; left: 0;
+    font-size: 0.68rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--sienna);
+    white-space: nowrap;
+  }
   /* note body rendered */
   .note-body mark { background: #ffe066; color: inherit; border-radius: 2px; padding: 0 2px; }
   .note-body ul { padding-left: 1.4em; }
   .note-body ol { padding-left: 1.4em; }
+  .note-body img { max-width: 100%; border-radius: 4px; margin: 0.4rem 0; display: block; border: 1px solid var(--border); cursor: zoom-in; }
+  /* image lightbox */
+  #imgLightbox { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:9999; align-items:center; justify-content:center; cursor:zoom-out; }
+  #imgLightbox.open { display:flex; }
+  #imgLightbox img { max-width:90vw; max-height:90vh; border-radius:6px; box-shadow:0 8px 40px rgba(0,0,0,0.6); }
 
   /* page input in-card */
   .page-input-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
@@ -733,8 +773,11 @@
         <button class="tb-btn" title="Bullet list" onmousedown="event.preventDefault();fmt('insertUnorderedList')">• ≡</button>
         <button class="tb-btn" title="Numbered list" onmousedown="event.preventDefault();fmt('insertOrderedList')">1 ≡</button>
         <div class="sep"></div>
+        <button class="tb-btn" title="Insert image" onmousedown="event.preventDefault();triggerImageInsert()" style="font-size:0.8rem;width:auto;padding:0 7px">🖼 Image</button>
+        <div class="sep"></div>
         <button class="tb-btn" title="Clear formatting" onmousedown="event.preventDefault();fmt('removeFormat')" style="font-size:0.7rem;width:auto;padding:0 6px">✕ fmt</button>
       </div>
+      <input type="file" id="imageFileInput" accept="image/*" class="hidden">
 
       <div style="border:1px solid var(--border);border-radius:0 0 6px 6px;overflow:hidden;margin-bottom:1rem">
         <div style="background:var(--cream);padding:0.3rem 0.8rem;font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">💡 Key Ideas</div>
@@ -1436,6 +1479,199 @@ load();
 if(!state.books.length) seedData();
 renderDashboard();
 renderLibrary();
+</script>
+<!-- IMAGE LIGHTBOX -->
+<div id="imgLightbox" onclick="document.getElementById('imgLightbox').classList.remove('open')">
+  <img id="imgLightboxImg" src="" alt="">
+</div>
+
+<!-- IMAGE RESIZER OVERLAY -->
+<div id="imgResizer">
+  <div class="r-border"></div>
+  <div class="r-handle nw" data-corner="nw"></div>
+  <div class="r-handle ne" data-corner="ne"></div>
+  <div class="r-handle sw" data-corner="sw"></div>
+  <div class="r-handle se" data-corner="se"></div>
+  <div class="r-label" id="resizerLabel"></div>
+</div>
+
+<script>
+// ─── IMAGE INSERTION ──────────────────────────────────────
+function triggerImageInsert() {
+  if(lastFocusedEditor) lastFocusedEditor.focus();
+  document.getElementById('imageFileInput').click();
+}
+
+document.getElementById('imageFileInput').addEventListener('change', function() {
+  const file = this.files[0];
+  if(file) insertImageFile(file, lastFocusedEditor);
+  this.value = '';
+});
+
+function insertImageFile(file, editor) {
+  if(!file || !file.type.startsWith('image/')) return;
+  if(!editor) editor = lastFocusedEditor;
+  if(!editor) return;
+  const reader = new FileReader();
+  reader.onload = e => insertImageSrc(e.target.result, editor);
+  reader.readAsDataURL(file);
+}
+
+function insertImageSrc(src, editor) {
+  editor.focus();
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = 'note image';
+  img.style.width = '100%';
+  const sel = window.getSelection();
+  if(sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(img);
+    range.setStartAfter(img);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    editor.appendChild(img);
+  }
+  // select it immediately so user sees handles
+  setTimeout(() => selectEditorImage(img), 50);
+}
+
+// ── Paste images into editor ──────────────────────────────
+document.addEventListener('paste', e => {
+  const editor = lastFocusedEditor;
+  if(!editor || !document.getElementById('noteModal').classList.contains('open')) return;
+  const items = e.clipboardData?.items;
+  if(!items) return;
+  for(const item of items) {
+    if(item.type.startsWith('image/')) {
+      e.preventDefault();
+      insertImageFile(item.getAsFile(), editor);
+      return;
+    }
+  }
+});
+
+// ── Drag-and-drop images into editor ─────────────────────
+['note-ideas','note-questions','note-actions'].forEach(id => {
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('dragover', e => { e.preventDefault(); el.style.background='var(--cream)'; });
+  el.addEventListener('dragleave', () => { el.style.background=''; });
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.style.background = '';
+    lastFocusedEditor = el;
+    const file = e.dataTransfer.files[0];
+    if(file) insertImageFile(file, el);
+  });
+});
+
+// ── Click image in editor → show resize handles ───────────
+document.addEventListener('click', e => {
+  const noteModal = document.getElementById('noteModal');
+  if(e.target.tagName === 'IMG' && e.target.closest('.rich-editor')) {
+    e.preventDefault();
+    selectEditorImage(e.target);
+    return;
+  }
+  // click outside image in editor → deselect
+  if(noteModal.classList.contains('open') && !e.target.closest('#imgResizer')) {
+    deselectEditorImage();
+  }
+  // click image in read view → lightbox
+  if(e.target.tagName === 'IMG' && e.target.closest('.note-body')) {
+    document.getElementById('imgLightboxImg').src = e.target.src;
+    document.getElementById('imgLightbox').classList.add('open');
+  }
+});
+
+// ── Resizer logic ─────────────────────────────────────────
+let selectedImg = null;
+const resizer = document.getElementById('imgResizer');
+const resizerLabel = document.getElementById('resizerLabel');
+
+function selectEditorImage(img) {
+  // deselect previous
+  document.querySelectorAll('.rich-editor img.selected').forEach(i => i.classList.remove('selected'));
+  selectedImg = img;
+  img.classList.add('selected');
+  positionResizer(img);
+  resizer.classList.add('visible');
+}
+
+function deselectEditorImage() {
+  if(selectedImg) selectedImg.classList.remove('selected');
+  selectedImg = null;
+  resizer.classList.remove('visible');
+}
+
+function positionResizer(img) {
+  const r = img.getBoundingClientRect();
+  const scrollX = window.scrollX, scrollY = window.scrollY;
+  resizer.style.left   = (r.left + scrollX) + 'px';
+  resizer.style.top    = (r.top  + scrollY) + 'px';
+  resizer.style.width  = r.width  + 'px';
+  resizer.style.height = r.height + 'px';
+  resizerLabel.textContent = `${Math.round(r.width)} × ${Math.round(r.height)} px`;
+}
+
+// drag state
+let dragCorner = null, dragStartX = 0, dragStartY = 0;
+let imgStartW = 0, imgStartH = 0, imgAspect = 1;
+
+resizer.querySelectorAll('.r-handle').forEach(handle => {
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if(!selectedImg) return;
+    dragCorner = handle.dataset.corner;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    imgStartW = selectedImg.getBoundingClientRect().width;
+    imgStartH = selectedImg.getBoundingClientRect().height;
+    imgAspect = imgStartW / imgStartH;
+    document.addEventListener('mousemove', onResizeDrag);
+    document.addEventListener('mouseup', onResizeEnd);
+  });
+});
+
+function onResizeDrag(e) {
+  if(!selectedImg || !dragCorner) return;
+  const dx = e.clientX - dragStartX;
+  const dy = e.clientY - dragStartY;
+
+  let newW;
+  if(dragCorner === 'se' || dragCorner === 'ne') newW = imgStartW + dx;
+  else newW = imgStartW - dx;
+
+  newW = Math.max(40, Math.min(newW, 1200));
+  const newH = newW / imgAspect;
+
+  selectedImg.style.width  = newW + 'px';
+  selectedImg.style.height = newH + 'px';
+  positionResizer(selectedImg);
+}
+
+function onResizeEnd() {
+  dragCorner = null;
+  document.removeEventListener('mousemove', onResizeDrag);
+  document.removeEventListener('mouseup', onResizeEnd);
+}
+
+// reposition handles on scroll/resize
+window.addEventListener('scroll', () => { if(selectedImg) positionResizer(selectedImg); }, true);
+window.addEventListener('resize', () => { if(selectedImg) positionResizer(selectedImg); });
+
+// ── Click image in read view → lightbox ──────────────────
+document.addEventListener('click', e => {
+  if(e.target.tagName==='IMG' && e.target.closest('.note-body')) {
+    document.getElementById('imgLightboxImg').src = e.target.src;
+    document.getElementById('imgLightbox').classList.add('open');
+  }
+});
 </script>
 </body>
 </html>
