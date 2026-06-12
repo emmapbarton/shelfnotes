@@ -132,12 +132,13 @@ button { color: inherit; }
 .note-page-marker { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .note-page-marker span { font: .57rem 'DM Mono'; color: var(--muted); letter-spacing: .12em; }
 .note-page-marker strong { font: 400 1.2rem var(--serif); color: var(--rust); margin-top: 4px; }
-.note-content p { white-space: pre-wrap; margin: 7px 0 12px; line-height: 1.6; font-family: var(--serif); font-size: 1.06rem; }
+.note-content .rich-content { margin: 7px 0 12px; }
 .note-type { color: var(--muted); font: .6rem 'DM Mono'; text-transform: uppercase; letter-spacing: .1em; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-row span { color: var(--sage); font: .65rem 'DM Mono'; }
 .delete { opacity: .4; }
 .delete:hover { opacity: 1; color: var(--rust); }
+.note-card-actions { display: flex; align-items: flex-start; gap: 2px; }
 .empty-state { min-height: 220px; border: 1px dashed #c8bead; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); }
 .empty-state h3 { font: 400 1.45rem var(--serif); color: var(--ink); margin: 10px 0 3px; }
 .empty-state p { margin: 0 0 16px; font-size: .82rem; }
@@ -155,6 +156,31 @@ button { color: inherit; }
 .auth-intro { display: flex; gap: 13px; align-items: center; background: #e6e8dc; color: #59684e; padding: 14px; border-radius: 8px; }
 .auth-intro p { margin: 0; font-size: .85rem; line-height: 1.5; }
 .error { color: #a23629; font-size: .8rem; }
+
+.rich-editor-shell { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--card); text-transform: none; letter-spacing: 0; }
+.rich-toolbar { min-height: 44px; padding: 6px 8px; display: flex; align-items: center; gap: 3px; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: var(--cream); }
+.rich-toolbar button { width: 31px; height: 31px; border: 1px solid transparent; border-radius: 5px; display: grid; place-items: center; background: transparent; cursor: pointer; }
+.rich-toolbar button:hover { background: var(--card); border-color: var(--line); color: var(--rust); }
+.toolbar-divider { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.upload-status { color: var(--muted); font: .62rem 'DM Mono'; margin-left: 5px; }
+.rich-editor { min-height: 210px; padding: 16px; outline: none; color: var(--ink); font: 1rem/1.65 var(--serif); }
+.rich-editor:empty::before { content: attr(data-placeholder); color: #9b9489; pointer-events: none; }
+.rich-editor p, .rich-content p { margin: .3em 0 .8em; }
+.rich-editor ul, .rich-editor ol, .rich-content ul, .rich-content ol { padding-left: 1.5em; margin: .4em 0 .9em; }
+.rich-editor h4, .rich-content h4 { margin: 1.2em 0 .3em; color: var(--rust); font: 500 .66rem 'DM Mono'; text-transform: uppercase; letter-spacing: .1em; }
+.rich-editor mark, .rich-content mark { background: #f3d77a; padding: 0 2px; border-radius: 2px; }
+.rich-editor img, .rich-content img { display: block; max-width: 100%; height: auto; margin: 14px 0; border: 1px solid var(--line); border-radius: 7px; }
+.rich-editor img { cursor: pointer; }
+.rich-editor img:hover { outline: 2px solid rgba(157,70,40,.35); outline-offset: 2px; }
+.image-resizer { min-height: 42px; padding: 7px 12px; border-top: 1px solid var(--line); background: #ece8de; display: flex; align-items: center; gap: 10px; color: var(--muted); font: .63rem 'DM Mono'; }
+.image-resizer input { flex: 1; padding: 0; box-shadow: none; accent-color: var(--rust); }
+.image-resizer output { width: 34px; color: var(--ink); }
+.image-resizer button { border: 0; background: none; color: var(--rust); cursor: pointer; font: inherit; }
+.editor-help { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--line); color: var(--muted); font: .61rem 'DM Mono'; }
+.editor-error { margin: 0; padding: 8px 12px 10px; border-top: 1px solid #e1b7ae; background: #fff0ed; color: #9b3424; font: .64rem 'DM Mono'; }
+.rich-content { color: var(--ink); font: 1.06rem/1.65 var(--serif); overflow-wrap: anywhere; }
+.rich-content > :first-child { margin-top: 0; }
+.rich-content > :last-child { margin-bottom: 0; }
 
 .connections-preview { min-height: 650px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background-color: #ede8dc; background-image: radial-gradient(#c6bdad 1px, transparent 1px); background-size: 22px 22px; }
 .connections-preview svg { position: absolute; inset: 0; width: 100%; height: 100%; }

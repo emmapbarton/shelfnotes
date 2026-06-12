@@ -31,6 +31,11 @@ import {
 } from './lib/data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { Book, BookStatus, LegacyLibrary, LibraryData, Note } from './types'
+import {
+  RichContent,
+  RichTextEditor,
+} from './components/RichTextEditor'
+import { richTextPreview } from './lib/richText'
 
 const emptyLibrary: LibraryData = { books: [], notes: [] }
 const labels: Record<BookStatus, string> = {
@@ -261,6 +266,7 @@ function App() {
                 onUpdateBook={upsertBook}
                 onSaveNote={upsertNote}
                 onDeleteNote={removeNote}
+                user={user}
               />
             }
           />
@@ -444,16 +450,19 @@ function BookPage({
   onUpdateBook,
   onSaveNote,
   onDeleteNote,
+  user,
 }: {
   library: LibraryData
   onUpdateBook: (book: Book) => void
   onSaveNote: (note: Note) => void
   onDeleteNote: (noteId: string) => void
+  user: User | null
 }) {
   const { bookId } = useParams()
   const navigate = useNavigate()
   const book = library.books.find((item) => item.id === bookId)
   const [showNoteForm, setShowNoteForm] = useState(false)
+  const [editingNote, setEditingNote] = useState<Note | null>(null)
   if (!book) return <div className="page"><EmptyState title="Book not found" copy="It may have been removed." action={() => navigate('/library')} /></div>
   const notes = library.notes
     .filter((note) => note.bookId === book.id)
@@ -502,53 +511,63 @@ function BookPage({
               </div>
               <div className="note-content">
                 <div className="note-type">{note.kind}</div>
-                <p>{note.content}</p>
+                <RichContent content={note.content} />
                 <div className="tag-row">{note.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
               </div>
-              <button className="icon-button delete" onClick={() => onDeleteNote(note.id)} aria-label="Delete note"><X size={16} /></button>
+              <div className="note-card-actions">
+                <button className="text-button" onClick={() => { setEditingNote(note); setShowNoteForm(true) }}>Edit</button>
+                <button className="icon-button delete" onClick={() => onDeleteNote(note.id)} aria-label="Delete note"><X size={16} /></button>
+              </div>
             </article>
           ))}
         </div>
         {!notes.length && <EmptyState title="No notes yet" copy="Capture the first thought that makes you pause." action={() => setShowNoteForm(true)} />}
       </section>
-      {showNoteForm && <NoteForm book={book} onClose={() => setShowNoteForm(false)} onSave={onSaveNote} />}
+      {showNoteForm && <NoteForm book={book} note={editingNote} user={user} onClose={() => { setShowNoteForm(false); setEditingNote(null) }} onSave={onSaveNote} />}
     </div>
   )
 }
 
-function NoteForm({ book, onClose, onSave }: { book: Book; onClose: () => void; onSave: (note: Note) => void }) {
-  const [pageStart, setPageStart] = useState(book.currentPage || 1)
-  const [pageEnd, setPageEnd] = useState(book.currentPage || 1)
-  const [kind, setKind] = useState<Note['kind']>('note')
-  const [content, setContent] = useState('')
-  const [tags, setTags] = useState('')
+function NoteForm({ book, note, user, onClose, onSave }: { book: Book; note: Note | null; user: User | null; onClose: () => void; onSave: (note: Note) => void }) {
+  const [pageStart, setPageStart] = useState(note?.pageStart ?? (book.currentPage || 1))
+  const [pageEnd, setPageEnd] = useState(note?.pageEnd ?? (book.currentPage || 1))
+  const [kind, setKind] = useState<Note['kind']>(note?.kind ?? 'note')
+  const [content, setContent] = useState(note?.content ?? '')
+  const [tags, setTags] = useState(note?.tags.join(', ') ?? '')
+  const [validationError, setValidationError] = useState('')
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    const hasImage = /<img[\s>]/i.test(content)
+    if (!richTextPreview(content) && !hasImage) {
+      setValidationError('Add some text or an image before saving.')
+      return
+    }
     const timestamp = new Date().toISOString()
     onSave({
-      id: uid(),
+      id: note?.id ?? uid(),
       bookId: book.id,
       pageStart,
       pageEnd,
       content: content.trim(),
       kind,
       tags: tags.split(',').map((tag) => tag.trim().replace(/^#/, '')).filter(Boolean),
-      createdAt: timestamp,
+      createdAt: note?.createdAt ?? timestamp,
       updatedAt: timestamp,
     })
     onClose()
   }
   return (
-    <Modal title="Capture a note" onClose={onClose}>
+    <Modal title={note ? 'Edit note' : 'Capture a note'} onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <div className="form-row">
           <label>From page<input type="number" min="0" value={pageStart} onChange={(event) => setPageStart(Number(event.target.value))} /></label>
           <label>To page<input type="number" min="0" value={pageEnd} onChange={(event) => setPageEnd(Number(event.target.value))} /></label>
           <label>Type<select value={kind} onChange={(event) => setKind(event.target.value as Note['kind'])}><option value="note">Note</option><option value="quote">Quote</option><option value="question">Question</option></select></label>
         </div>
-        <label>Your thought<textarea autoFocus required rows={8} value={content} onChange={(event) => setContent(event.target.value)} placeholder="What made you pause?" /></label>
+        <label>Your thought<RichTextEditor value={content} onChange={setContent} user={user} bookId={book.id} /></label>
+        {validationError && <p className="error">{validationError}</p>}
         <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="freedom, memory, language" /></label>
-        <div className="form-actions"><button type="button" className="button subtle" onClick={onClose}>Cancel</button><button className="button primary">Save note</button></div>
+        <div className="form-actions"><button type="button" className="button subtle" onClick={onClose}>Cancel</button><button className="button primary">{note ? 'Save changes' : 'Save note'}</button></div>
       </form>
     </Modal>
   )
@@ -659,7 +678,7 @@ function NoteRow({ note, book }: { note: Note; book?: Book }) {
   return (
     <Link className="note-row" to={`/books/${note.bookId}`}>
       <span className="note-page">p. {pageLabel(note)}</span>
-      <span><strong>{note.content}</strong><small>{book?.title ?? 'Unknown book'}</small></span>
+      <span><strong>{richTextPreview(note.content)}</strong><small>{book?.title ?? 'Unknown book'}</small></span>
       <ChevronRight size={17} />
     </Link>
   )
