@@ -3,6 +3,7 @@ import type {
   Book,
   BookStatus,
   LegacyLibrary,
+  LegacyNote,
   LibraryData,
   Note,
 } from '../types'
@@ -14,9 +15,13 @@ const LEGACY_KEY = 'pll_data'
 const now = () => new Date().toISOString()
 export const uid = () => crypto.randomUUID()
 
-const cleanText = (html = '') => {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  return doc.body.textContent?.trim() ?? ''
+const legacyNoteContent = (note: LegacyNote) => {
+  const sections = [
+    note.ideas && `<h4>Key ideas</h4>${note.ideas}`,
+    note.questions && `<h4>Questions</h4>${note.questions}`,
+    note.actions && `<h4>Actions</h4>${note.actions}`,
+  ].filter(Boolean)
+  return sections.join('')
 }
 
 const parsePages = (value = '') => {
@@ -56,11 +61,6 @@ export function migrateLegacy(data: LegacyLibrary): LibraryData {
     })
 
     for (const oldNote of oldBook.notes ?? []) {
-      const sections = [
-        oldNote.ideas && cleanText(oldNote.ideas),
-        oldNote.questions && `Questions\n${cleanText(oldNote.questions)}`,
-        oldNote.actions && `Actions\n${cleanText(oldNote.actions)}`,
-      ].filter(Boolean)
       const pages = parsePages(oldNote.pages)
       const date = oldNote.date
         ? new Date(`${oldNote.date}T12:00:00`).toISOString()
@@ -69,7 +69,7 @@ export function migrateLegacy(data: LegacyLibrary): LibraryData {
         id: oldNote.id || uid(),
         bookId,
         ...pages,
-        content: sections.join('\n\n'),
+        content: legacyNoteContent(oldNote),
         kind: 'note',
         tags: oldNote.tags ?? [],
         createdAt: date,
@@ -118,7 +118,12 @@ function seedLibrary(): LibraryData {
 
 export function loadLocalLibrary(): LibraryData {
   const current = localStorage.getItem(STORAGE_KEY)
-  if (current) return JSON.parse(current) as LibraryData
+  if (current) {
+    const library = JSON.parse(current) as LibraryData
+    const restored = restoreLegacyFormatting(library)
+    if (restored !== library) saveLocalLibrary(restored)
+    return restored
+  }
 
   const legacy = localStorage.getItem(LEGACY_KEY)
   const data = legacy
@@ -126,6 +131,20 @@ export function loadLocalLibrary(): LibraryData {
     : seedLibrary()
   saveLocalLibrary(data)
   return data
+}
+
+function restoreLegacyFormatting(library: LibraryData) {
+  const legacyValue = localStorage.getItem(LEGACY_KEY)
+  if (!legacyValue) return library
+  const legacy = migrateLegacy(JSON.parse(legacyValue) as LegacyLibrary)
+  let changed = false
+  const notes = library.notes.map((note) => {
+    const richNote = legacy.notes.find((candidate) => candidate.id === note.id)
+    if (!richNote || /<[a-z][\s\S]*>/i.test(note.content)) return note
+    changed = true
+    return { ...note, content: richNote.content }
+  })
+  return changed ? { ...library, notes } : library
 }
 
 export function saveLocalLibrary(data: LibraryData) {

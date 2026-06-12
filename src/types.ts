@@ -40,14 +40,16 @@ export interface LegacyLibrary {
     totalPages?: number
     currentPage?: number
     status?: string
-    notes?: Array<{
-      id?: string
-      date?: string
-      pages?: string
-      ideas?: string
-      questions?: string
-      actions?: string
-      tags?: string[]
-    }>
+    notes?: LegacyNote[]
   }>
+}
+
+export interface LegacyNote {
+  id?: string
+  date?: string
+  pages?: string
+  ideas?: string
+  questions?: string
+  actions?: string
+  tags?: string[]
 }
