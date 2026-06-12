@@ -16,7 +16,16 @@ const STORAGE_KEY = 'shelf-notes-library-v1'
 const LEGACY_KEY = 'pll_data'
 
 const now = () => new Date().toISOString()
-export const uid = () => crypto.randomUUID()
+export const uid = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16)
+    const value = character === 'x' ? random : (random & 0x3) | 0x8
+    return value.toString(16)
+  })
+}
 
 const legacyNoteContent = (note: LegacyNote) => {
   const sections = [
@@ -123,9 +132,19 @@ function seedLibrary(): LibraryData {
 }
 
 export function loadLocalLibrary(): LibraryData {
-  const current = localStorage.getItem(STORAGE_KEY)
+  let current: string | null = null
+  try {
+    current = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return seedLibrary()
+  }
   if (current) {
-    const parsed = JSON.parse(current) as Partial<LibraryData>
+    let parsed: Partial<LibraryData>
+    try {
+      parsed = JSON.parse(current) as Partial<LibraryData>
+    } catch {
+      return seedLibrary()
+    }
     const library: LibraryData = {
       books: parsed.books ?? [],
       notes: parsed.notes ?? [],
@@ -139,7 +158,12 @@ export function loadLocalLibrary(): LibraryData {
     return normalized
   }
 
-  const legacy = localStorage.getItem(LEGACY_KEY)
+  let legacy: string | null = null
+  try {
+    legacy = localStorage.getItem(LEGACY_KEY)
+  } catch {
+    return seedLibrary()
+  }
   const data = legacy
     ? migrateLegacy(JSON.parse(legacy) as LegacyLibrary)
     : seedLibrary()
@@ -148,7 +172,12 @@ export function loadLocalLibrary(): LibraryData {
 }
 
 function restoreLegacyFormatting(library: LibraryData) {
-  const legacyValue = localStorage.getItem(LEGACY_KEY)
+  let legacyValue: string | null = null
+  try {
+    legacyValue = localStorage.getItem(LEGACY_KEY)
+  } catch {
+    return library
+  }
   if (!legacyValue) return library
   const legacySource = JSON.parse(legacyValue) as LegacyLibrary
   let changed = false
@@ -201,7 +230,11 @@ function isUuid(value: string) {
 }
 
 export function saveLocalLibrary(data: LibraryData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  } catch {
+    // The app remains usable in memory when storage is blocked or full.
+  }
 }
 
 export async function loadCloudLibrary(): Promise<LibraryData> {
