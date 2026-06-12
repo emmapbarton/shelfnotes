@@ -195,6 +195,84 @@ button { color: inherit; }
 .connections-copy h1 { font-size: clamp(2.5rem, 5vw, 4.5rem); }
 .connections-copy > p:not(.eyebrow) { color: var(--muted); line-height: 1.6; max-width: 560px; }
 
+.connections-home { min-height: calc(100vh - 68px); }
+.canvas-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.canvas-gallery-card, .new-canvas-card { min-height: 370px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; transition: transform .18s, box-shadow .18s; }
+.canvas-gallery-card:hover, .new-canvas-card:hover { transform: translateY(-4px); box-shadow: 0 16px 32px rgba(65,52,36,.1); }
+.canvas-thumbnail { height: 190px; position: relative; overflow: hidden; background-color: #ece6da; background-image: radial-gradient(#c9c0b1 1px, transparent 1px); background-size: 18px 18px; border-bottom: 1px solid var(--line); }
+.canvas-thumbnail svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.canvas-thumbnail path { fill: none; stroke: #a66750; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.canvas-thumbnail span { position: absolute; width: 74px; height: 48px; background: #fbf9f4; border: 1px solid var(--line); border-left-width: 4px; border-radius: 5px; box-shadow: 0 5px 10px rgba(62,48,30,.08); }
+.canvas-gallery-copy { padding: 21px; }
+.canvas-gallery-copy h2 { margin: 0 0 8px; font: 400 1.65rem var(--serif); }
+.canvas-gallery-copy > p:not(.eyebrow) { min-height: 42px; color: var(--muted); font-size: .82rem; line-height: 1.5; }
+.canvas-card-footer { margin-top: 22px; padding-top: 13px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--rust); font: .65rem 'DM Mono'; }
+.new-canvas-card { border-style: dashed; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); cursor: pointer; }
+.new-canvas-card strong { margin: 13px 0 5px; color: var(--ink); font: 400 1.3rem var(--serif); }
+.new-canvas-card span { font-size: .78rem; }
+.connections-empty { min-height: 500px; display: grid; grid-template-columns: 1.1fr .9fr; align-items: center; gap: 60px; border: 1px solid var(--line); border-radius: 13px; padding: 55px; background: var(--card); }
+.connections-empty-art { height: 330px; position: relative; background-color: #ede8dc; background-image: radial-gradient(#c6bdad 1px, transparent 1px); background-size: 20px 20px; border-radius: 9px; overflow: hidden; }
+.connections-empty-art svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.connections-empty-art path { fill: none; stroke: #9d6249; stroke-width: 2; stroke-dasharray: 6 5; }
+.empty-node { position: absolute; z-index: 2; width: 150px; padding: 15px; border: 1px solid var(--line); border-left: 4px solid var(--rust); background: var(--card); border-radius: 7px; font: .9rem var(--serif); box-shadow: 0 8px 15px rgba(60,48,32,.08); }
+.empty-node.one { left: 8%; top: 22%; }
+.empty-node.two { right: 8%; bottom: 22%; border-left-color: var(--sage); }
+.connections-empty h2 { margin: 5px 0 14px; font: 400 2.4rem/1.05 var(--serif); }
+.connections-empty p:not(.eyebrow) { color: var(--muted); line-height: 1.6; }
+
+.book-checkboxes { border: 0; padding: 0; margin: 2px 0; display: grid; gap: 8px; max-height: 300px; overflow: auto; }
+.book-checkboxes legend { margin-bottom: 9px; color: var(--muted); font: .66rem 'DM Mono'; text-transform: uppercase; letter-spacing: .08em; }
+.book-checkboxes label { display: grid; grid-template-columns: auto 38px 1fr; gap: 10px; align-items: center; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); cursor: pointer; text-transform: none; letter-spacing: 0; }
+.book-checkboxes label > span { width: 34px; height: 42px; border-radius: 3px; display: grid; place-items: center; color: white; font: .62rem 'DM Mono'; }
+.book-checkboxes strong { font: 500 .85rem 'DM Sans'; color: var(--ink); }
+.book-checkboxes small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; }
+
+.canvas-workspace { height: calc(100vh - 68px); display: grid; grid-template-rows: auto 1fr; background: #ede8dc; }
+.canvas-workspace-header { min-height: 82px; padding: 10px 20px; display: grid; grid-template-columns: auto minmax(230px, 1fr) auto auto; gap: 15px; align-items: center; background: rgba(244,240,231,.97); border-bottom: 1px solid var(--line); z-index: 8; }
+.canvas-title-block h1 { margin: 0; font: 400 1.55rem var(--serif); }
+.canvas-title-block .eyebrow { margin-bottom: 2px; }
+.canvas-title-block > p:last-child { margin: 2px 0 0; color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.selected-books { display: flex; align-items: center; }
+.selected-books > button:not(.add-books-chip) { width: 34px; height: 42px; margin-left: -7px; border: 2px solid var(--paper); border-radius: 4px; background: var(--book-color); color: white; font: .58rem 'DM Mono'; cursor: pointer; }
+.selected-books > button:first-child { margin-left: 0; }
+.add-books-chip { margin-left: 7px; min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 17px; background: var(--card); cursor: pointer; font-size: .72rem; }
+.canvas-toolbar { display: flex; align-items: center; gap: 6px; }
+.canvas-toolbar select { min-height: 36px; max-width: 130px; padding: 0 8px; border: 1px solid var(--line); background: var(--card); border-radius: 6px; font-size: .72rem; }
+.canvas-body { min-height: 0; display: flex; position: relative; }
+.notes-drawer { width: 54px; flex: 0 0 auto; position: relative; z-index: 7; background: var(--paper); border-right: 1px solid var(--line); transition: width .2s; overflow: hidden; }
+.notes-drawer.open { width: 310px; padding: 22px 16px; }
+.drawer-toggle { position: absolute; top: 10px; right: 9px; width: 35px; height: 35px; padding: 0; border: 1px solid var(--line); background: var(--card); border-radius: 50%; display: flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer; }
+.notes-drawer.open .drawer-toggle { width: auto; border-radius: 18px; padding: 0 9px; }
+.drawer-heading { padding: 45px 3px 10px; }
+.drawer-heading h2 { margin: 0 0 7px; font: 400 1.5rem var(--serif); }
+.drawer-heading > p:last-child { margin: 0; color: var(--muted); font-size: .73rem; line-height: 1.5; }
+.notes-drawer .search-box { width: 100%; }
+.drawer-note-list { margin-top: 13px; display: grid; gap: 9px; max-height: calc(100vh - 320px); overflow-y: auto; padding-right: 3px; }
+.drawer-note { position: relative; padding: 13px 38px 13px 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); cursor: grab; }
+.drawer-note:active { cursor: grabbing; }
+.drawer-note > span { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 7px 0 0 7px; }
+.drawer-note p { margin: 0 0 6px; color: var(--muted); font: .58rem 'DM Mono'; text-transform: uppercase; }
+.drawer-note strong { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font: 400 .9rem/1.35 var(--serif); }
+.drawer-note button { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); display: grid; place-items: center; cursor: pointer; }
+.drawer-empty { color: var(--muted); font-size: .75rem; text-align: center; padding: 25px 10px; }
+.flow-shell { flex: 1; min-width: 0; position: relative; }
+.flow-shell .react-flow { background: #ede8dc; }
+.flow-shell .react-flow__controls { right: 178px; bottom: 16px; box-shadow: none; border: 1px solid var(--line); }
+.flow-shell .react-flow__controls-button { background: var(--card); border-color: var(--line); }
+.flow-shell .react-flow__minimap { width: 150px; height: 92px; margin: 16px; border: 1px solid var(--line); border-radius: 7px; background: rgba(251,249,244,.92); }
+.flow-node { width: 100%; height: 100%; position: relative; padding: 16px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--node-color); border-radius: 8px; box-shadow: 0 9px 20px rgba(64,50,32,.1); overflow: hidden; }
+.flow-node.selected { box-shadow: 0 0 0 2px rgba(157,70,40,.28), 0 12px 24px rgba(64,50,32,.12); }
+.flow-node-meta { margin: 0 0 8px; color: var(--rust); font: .59rem 'DM Mono'; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-node > strong:not(.group-label) { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; font: 400 1rem/1.38 var(--serif); }
+.flow-node-tags { display: flex; flex-wrap: wrap; gap: 5px; position: absolute; left: 16px; right: 10px; bottom: 11px; }
+.flow-node-tags span { color: var(--sage); font: .57rem 'DM Mono'; }
+.flow-node.text { background: #f7efcf; border-left-color: #b59143; transform: rotate(-.4deg); }
+.flow-node.text > strong { font-size: 1.12rem; }
+.flow-node.group { background: rgba(157,70,40,.035); border: 1px dashed rgba(157,70,40,.5); border-left: 1px dashed rgba(157,70,40,.5); box-shadow: none; overflow: visible; }
+.group-label { position: absolute; left: 12px; top: -25px; color: var(--rust); font: .65rem 'DM Mono'; text-transform: uppercase; letter-spacing: .1em; }
+.flow-node .react-flow__handle { width: 9px; height: 9px; border: 2px solid var(--paper); background: var(--node-color); }
+.react-flow__edge-textbg { rx: 4; ry: 4; }
+
 @media (max-width: 960px) {
   .topbar { grid-template-columns: 1fr auto; }
   .main-nav { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: 58px; background: var(--card); border-top: 1px solid var(--line); justify-content: center; }
@@ -203,6 +281,11 @@ button { color: inherit; }
   .book-grid { grid-template-columns: repeat(3, 1fr); }
   .idea-card { margin-top: 10px; }
   .page { padding-bottom: 100px; }
+  .canvas-gallery { grid-template-columns: repeat(2, 1fr); }
+  .canvas-workspace { height: calc(100vh - 126px); }
+  .canvas-workspace-header { grid-template-columns: auto 1fr auto; }
+  .selected-books { display: none; }
+  .canvas-toolbar .button span { display: none; }
 }
 
 @media (max-width: 700px) {
@@ -229,6 +312,12 @@ button { color: inherit; }
   .node-a { top: 65%; }
   .node-b { top: 72%; right: 4%; }
   .node-c { display: none; }
+  .canvas-gallery { grid-template-columns: 1fr; }
+  .connections-empty { grid-template-columns: 1fr; padding: 25px; }
+  .connections-empty-art { height: 250px; }
+  .canvas-workspace-header { min-height: 100px; grid-template-columns: auto 1fr; }
+  .canvas-toolbar { grid-column: 1 / -1; overflow-x: auto; }
+  .notes-drawer.open { width: min(290px, 78vw); position: absolute; inset: 0 auto 0 0; box-shadow: 10px 0 25px rgba(50,40,28,.12); }
 }
 
 @media (max-width: 470px) {

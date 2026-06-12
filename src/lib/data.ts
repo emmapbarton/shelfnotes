@@ -2,6 +2,9 @@ import type { User } from '@supabase/supabase-js'
 import type {
   Book,
   BookStatus,
+  Canvas,
+  CanvasItem,
+  CanvasLink,
   LegacyLibrary,
   LegacyNote,
   LibraryData,
@@ -45,7 +48,7 @@ export function migrateLegacy(data: LegacyLibrary): LibraryData {
   const notes: Note[] = []
 
   for (const oldBook of data.books ?? []) {
-    const bookId = oldBook.id || uid()
+    const bookId = uid()
     const createdAt = now()
     books.push({
       id: bookId,
@@ -66,7 +69,7 @@ export function migrateLegacy(data: LegacyLibrary): LibraryData {
         ? new Date(`${oldNote.date}T12:00:00`).toISOString()
         : createdAt
       notes.push({
-        id: oldNote.id || uid(),
+        id: uid(),
         bookId,
         ...pages,
         content: legacyNoteContent(oldNote),
@@ -78,7 +81,7 @@ export function migrateLegacy(data: LegacyLibrary): LibraryData {
     }
   }
 
-  return { books, notes }
+  return { books, notes, canvases: [], canvasItems: [], canvasLinks: [] }
 }
 
 function seedLibrary(): LibraryData {
@@ -113,16 +116,27 @@ function seedLibrary(): LibraryData {
         updatedAt: createdAt,
       },
     ],
+    canvases: [],
+    canvasItems: [],
+    canvasLinks: [],
   }
 }
 
 export function loadLocalLibrary(): LibraryData {
   const current = localStorage.getItem(STORAGE_KEY)
   if (current) {
-    const library = JSON.parse(current) as LibraryData
+    const parsed = JSON.parse(current) as Partial<LibraryData>
+    const library: LibraryData = {
+      books: parsed.books ?? [],
+      notes: parsed.notes ?? [],
+      canvases: parsed.canvases ?? [],
+      canvasItems: parsed.canvasItems ?? [],
+      canvasLinks: parsed.canvasLinks ?? [],
+    }
     const restored = restoreLegacyFormatting(library)
-    if (restored !== library) saveLocalLibrary(restored)
-    return restored
+    const normalized = normalizeIdentifiers(restored)
+    if (normalized !== library) saveLocalLibrary(normalized)
+    return normalized
   }
 
   const legacy = localStorage.getItem(LEGACY_KEY)
@@ -136,15 +150,54 @@ export function loadLocalLibrary(): LibraryData {
 function restoreLegacyFormatting(library: LibraryData) {
   const legacyValue = localStorage.getItem(LEGACY_KEY)
   if (!legacyValue) return library
-  const legacy = migrateLegacy(JSON.parse(legacyValue) as LegacyLibrary)
+  const legacySource = JSON.parse(legacyValue) as LegacyLibrary
   let changed = false
   const notes = library.notes.map((note) => {
-    const richNote = legacy.notes.find((candidate) => candidate.id === note.id)
-    if (!richNote || /<[a-z][\s\S]*>/i.test(note.content)) return note
+    if (/<[a-z][\s\S]*>/i.test(note.content)) return note
+    const sourceNote = legacySource.books
+      ?.flatMap((book) => book.notes ?? [])
+      .find((candidate) => candidate.id === note.id)
+    if (!sourceNote) return note
     changed = true
-    return { ...note, content: richNote.content }
+    return { ...note, content: legacyNoteContent(sourceNote) }
   })
   return changed ? { ...library, notes } : library
+}
+
+function normalizeIdentifiers(library: LibraryData) {
+  const bookIds = new Map<string, string>()
+  const noteIds = new Map<string, string>()
+  library.books.forEach((book) => {
+    if (!isUuid(book.id)) bookIds.set(book.id, uid())
+  })
+  library.notes.forEach((note) => {
+    if (!isUuid(note.id)) noteIds.set(note.id, uid())
+  })
+  if (!bookIds.size && !noteIds.size) return library
+  return {
+    ...library,
+    books: library.books.map((book) => ({
+      ...book,
+      id: bookIds.get(book.id) ?? book.id,
+    })),
+    notes: library.notes.map((note) => ({
+      ...note,
+      id: noteIds.get(note.id) ?? note.id,
+      bookId: bookIds.get(note.bookId) ?? note.bookId,
+    })),
+    canvases: library.canvases.map((canvas) => ({
+      ...canvas,
+      bookIds: canvas.bookIds.map((id) => bookIds.get(id) ?? id),
+    })),
+    canvasItems: library.canvasItems.map((item) => ({
+      ...item,
+      noteId: item.noteId ? noteIds.get(item.noteId) ?? item.noteId : null,
+    })),
+  }
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 export function saveLocalLibrary(data: LibraryData) {
@@ -153,10 +206,20 @@ export function saveLocalLibrary(data: LibraryData) {
 
 export async function loadCloudLibrary(): Promise<LibraryData> {
   if (!supabase) return loadLocalLibrary()
-  const [{ data: books, error: booksError }, { data: notes, error: notesError }] =
+  const local = loadLocalLibrary()
+  const [
+    { data: books, error: booksError },
+    { data: notes, error: notesError },
+    { data: canvases, error: canvasesError },
+    { data: canvasItems, error: canvasItemsError },
+    { data: canvasLinks, error: canvasLinksError },
+  ] =
     await Promise.all([
       supabase.from('books').select('*').order('updated_at', { ascending: false }),
       supabase.from('notes').select('*').order('created_at', { ascending: false }),
+      supabase.from('canvases').select('*').order('updated_at', { ascending: false }),
+      supabase.from('canvas_items').select('*'),
+      supabase.from('canvas_links').select('*'),
     ])
 
   if (booksError) throw booksError
@@ -186,7 +249,76 @@ export async function loadCloudLibrary(): Promise<LibraryData> {
       createdAt: note.created_at,
       updatedAt: note.updated_at,
     })),
+    canvases: canvasesError || !canvases?.length ? local.canvases : canvases.map((canvas) => ({
+      id: canvas.id,
+      title: canvas.title,
+      question: canvas.question ?? '',
+      bookIds: canvas.book_ids ?? [],
+      createdAt: canvas.created_at,
+      updatedAt: canvas.updated_at,
+    })),
+    canvasItems: canvasItemsError || !canvasItems?.length ? local.canvasItems : canvasItems.map((item) => ({
+      id: item.id,
+      canvasId: item.canvas_id,
+      kind: item.kind,
+      noteId: item.note_id,
+      content: item.content ?? '',
+      label: item.label ?? '',
+      x: Number(item.x),
+      y: Number(item.y),
+      width: Number(item.width),
+      height: Number(item.height),
+      color: item.color ?? '',
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+    })),
+    canvasLinks: canvasLinksError || !canvasLinks?.length ? local.canvasLinks : canvasLinks.map((link) => ({
+      id: link.id,
+      canvasId: link.canvas_id,
+      sourceItemId: link.source_item_id,
+      targetItemId: link.target_item_id,
+      type: link.type,
+      label: link.label ?? '',
+      createdAt: link.created_at,
+    })),
   }
+}
+
+export async function saveCanvas(user: User | null, canvas: Canvas) {
+  if (!user || !supabase) return
+  const { error } = await supabase.from('canvases').upsert({
+    id: canvas.id, user_id: user.id, title: canvas.title,
+    question: canvas.question, book_ids: canvas.bookIds,
+    created_at: canvas.createdAt, updated_at: canvas.updatedAt,
+  })
+  if (error) throw error
+}
+
+export async function saveCanvasItem(user: User | null, item: CanvasItem) {
+  if (!user || !supabase) return
+  const { error } = await supabase.from('canvas_items').upsert({
+    id: item.id, user_id: user.id, canvas_id: item.canvasId, kind: item.kind,
+    note_id: item.noteId, content: item.content, label: item.label,
+    x: item.x, y: item.y, width: item.width, height: item.height,
+    color: item.color, created_at: item.createdAt, updated_at: item.updatedAt,
+  })
+  if (error) throw error
+}
+
+export async function saveCanvasLink(user: User | null, link: CanvasLink) {
+  if (!user || !supabase) return
+  const { error } = await supabase.from('canvas_links').upsert({
+    id: link.id, user_id: user.id, canvas_id: link.canvasId,
+    source_item_id: link.sourceItemId, target_item_id: link.targetItemId,
+    type: link.type, label: link.label, created_at: link.createdAt,
+  })
+  if (error) throw error
+}
+
+export async function deleteCanvasRecord(user: User | null, table: 'canvases' | 'canvas_items' | 'canvas_links', id: string) {
+  if (!user || !supabase) return
+  const { error } = await supabase.from(table).delete().eq('id', id)
+  if (error) throw error
 }
 
 export async function saveBook(user: User | null, book: Book) {
@@ -234,4 +366,7 @@ export async function migrateLocalToCloud(user: User, library: LibraryData) {
   if (!supabase) return
   for (const book of library.books) await saveBook(user, book)
   for (const note of library.notes) await saveNote(user, note)
+  for (const canvas of library.canvases) await saveCanvas(user, canvas)
+  for (const item of library.canvasItems) await saveCanvasItem(user, item)
+  for (const link of library.canvasLinks) await saveCanvasLink(user, link)
 }

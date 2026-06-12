@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import {
   ArrowLeft,
@@ -10,7 +10,6 @@ import {
   Library,
   LogIn,
   LogOut,
-  Network,
   Plus,
   Search,
   Sparkles,
@@ -37,7 +36,24 @@ import {
 } from './components/RichTextEditor'
 import { richTextPreview } from './lib/richText'
 
-const emptyLibrary: LibraryData = { books: [], notes: [] }
+const ConnectionsHome = lazy(() =>
+  import('./components/Connections').then((module) => ({
+    default: module.ConnectionsHome,
+  })),
+)
+const CanvasWorkspace = lazy(() =>
+  import('./components/Connections').then((module) => ({
+    default: module.CanvasWorkspace,
+  })),
+)
+
+const emptyLibrary: LibraryData = {
+  books: [],
+  notes: [],
+  canvases: [],
+  canvasItems: [],
+  canvasLinks: [],
+}
 const labels: Record<BookStatus, string> = {
   not_started: 'Not started',
   reading: 'Reading',
@@ -169,7 +185,12 @@ function App() {
       const parsed = JSON.parse(await file.text()) as LibraryData | LegacyLibrary
       const imported =
         'notes' in parsed && Array.isArray(parsed.notes)
-          ? (parsed as LibraryData)
+          ? {
+              ...(parsed as LibraryData),
+              canvases: (parsed as LibraryData).canvases ?? [],
+              canvasItems: (parsed as LibraryData).canvasItems ?? [],
+              canvasLinks: (parsed as LibraryData).canvasLinks ?? [],
+            }
           : migrateLegacy(parsed as LegacyLibrary)
       setLibrary(imported)
       setMessage(`Imported ${imported.books.length} books.`)
@@ -193,7 +214,7 @@ function App() {
           <NavLink to="/" end>Today</NavLink>
           <NavLink to="/library">Library</NavLink>
           <NavLink to="/connections">
-            Connections <span className="soon">Soon</span>
+            Connections
           </NavLink>
         </nav>
         <div className="top-actions">
@@ -270,7 +291,14 @@ function App() {
               />
             }
           />
-          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route
+            path="/connections"
+            element={<Suspense fallback={<div className="loading-screen">Opening your canvases…</div>}><ConnectionsHome library={library} user={user} onChange={setLibrary} onMessage={setMessage} /></Suspense>}
+          />
+          <Route
+            path="/connections/:canvasId"
+            element={<Suspense fallback={<div className="loading-screen">Opening your canvas…</div>}><CanvasWorkspace library={library} user={user} onChange={setLibrary} onMessage={setMessage} /></Suspense>}
+          />
         </Routes>
       </main>
 
@@ -629,28 +657,6 @@ function AuthDialog({ onClose, onMessage }: { onClose: () => void; onMessage: (m
         <div className="form-actions"><button type="button" className="button subtle" onClick={onClose}>Not now</button><button disabled={sending || !isSupabaseConfigured} className="button primary">{sending ? 'Sending…' : 'Email me a sign-in link'}</button></div>
       </form>
     </Modal>
-  )
-}
-
-function ConnectionsPage() {
-  return (
-    <div className="page">
-      <section className="connections-preview">
-        <div className="canvas-node node-a"><span>p. 24</span><strong>Private space creates intellectual freedom.</strong></div>
-        <div className="canvas-node node-b"><span>p. 48</span><strong>Material independence changes what can be written.</strong></div>
-        <div className="canvas-node node-c"><span>Another book</span><strong>Attention is shaped by environment.</strong></div>
-        <svg viewBox="0 0 1000 520" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M280,180 C420,80 480,360 640,250" />
-          <path d="M280,180 C360,300 280,410 470,420" />
-        </svg>
-        <div className="connections-copy">
-          <p className="eyebrow">Next milestone</p>
-          <h1>Arrange your thinking.<br />Draw the relationship.</h1>
-          <p>Notes will become movable cards with typed links such as supports, contradicts, answers, and extends.</p>
-          <span className="button primary"><Network size={18} /> Canvas coming next</span>
-        </div>
-      </section>
-    </div>
   )
 }
 

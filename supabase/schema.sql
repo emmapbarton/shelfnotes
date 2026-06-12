@@ -151,3 +151,6 @@ using (
   bucket_id = 'note-attachments'
   and (storage.foldername(name))[1] = (select auth.uid())::text
 );
+
+-- Connections canvas tables are maintained in:
+-- supabase/migrations/20260612_connections.sql
