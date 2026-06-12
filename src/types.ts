@@ -28,6 +28,53 @@ export interface Book {
 export interface LibraryData {
   books: Book[]
   notes: Note[]
+  canvases: Canvas[]
+  canvasItems: CanvasItem[]
+  canvasLinks: CanvasLink[]
+}
+
+export interface Canvas {
+  id: string
+  title: string
+  question: string
+  bookIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasItemKind = 'note' | 'text' | 'group'
+
+export interface CanvasItem {
+  id: string
+  canvasId: string
+  kind: CanvasItemKind
+  noteId: string | null
+  content: string
+  label: string
+  x: number
+  y: number
+  width: number
+  height: number
+  color: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type CanvasLinkType =
+  | 'related'
+  | 'supports'
+  | 'contradicts'
+  | 'extends'
+  | 'answers'
+
+export interface CanvasLink {
+  id: string
+  canvasId: string
+  sourceItemId: string
+  targetItemId: string
+  type: CanvasLinkType
+  label: string
+  createdAt: string
 }
 
 export interface LegacyLibrary {
