@@ -302,6 +302,7 @@ export async function loadCloudLibrary(): Promise<LibraryData> {
       width: Number(item.width),
       height: Number(item.height),
       color: item.color ?? '',
+      locked: item.locked ?? false,
       createdAt: item.created_at,
       updatedAt: item.updated_at,
     })),
@@ -329,12 +330,21 @@ export async function saveCanvas(user: User | null, canvas: Canvas) {
 
 export async function saveCanvasItem(user: User | null, item: CanvasItem) {
   if (!user || !supabase) return
-  const { error } = await supabase.from('canvas_items').upsert({
+  const record = {
     id: item.id, user_id: user.id, canvas_id: item.canvasId, kind: item.kind,
     note_id: item.noteId, content: item.content, label: item.label,
     x: item.x, y: item.y, width: item.width, height: item.height,
     color: item.color, created_at: item.createdAt, updated_at: item.updatedAt,
+  }
+  const { error } = await supabase.from('canvas_items').upsert({
+    ...record,
+    locked: item.locked ?? false,
   })
+  if (error?.code === 'PGRST204' && error.message.includes('locked')) {
+    const { error: compatibilityError } = await supabase.from('canvas_items').upsert(record)
+    if (compatibilityError) throw compatibilityError
+    return
+  }
   if (error) throw error
 }
 

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import {
   addEdge,
@@ -11,6 +11,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -19,20 +20,28 @@ import {
   type Node,
   type NodeChange,
   type NodeProps,
+  type OnSelectionChangeParams,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
   ArrowLeft,
+  AlignHorizontalDistributeCenter,
   BookMarked,
+  ChevronDown,
   ChevronRight,
   FolderPlus,
   FolderX,
   Group,
   Layers3,
+  Lock,
   Plus,
+  Redo2,
   Search,
   StickyNote,
   Trash2,
+  Undo2,
+  Unlock,
+  WandSparkles,
   X,
 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -62,6 +71,16 @@ const linkLabels: Record<CanvasLinkType, string> = {
   extends: 'extends',
   answers: 'answers',
 }
+
+type CanvasSnapshot = {
+  items: CanvasItem[]
+  links: CanvasLink[]
+}
+
+const cloneSnapshot = (snapshot: CanvasSnapshot): CanvasSnapshot => ({
+  items: snapshot.items.map((item) => ({ ...item })),
+  links: snapshot.links.map((link) => ({ ...link })),
+})
 
 export function ConnectionsHome({
   library,
@@ -180,12 +199,19 @@ function CanvasWorkspaceInner({
   const { canvasId } = useParams()
   const navigate = useNavigate()
   const canvas = library.canvases.find((item) => item.id === canvasId)
-  const { screenToFlowPosition, fitView } = useReactFlow()
+  const { screenToFlowPosition, fitView, getNodes } = useReactFlow()
   const [drawerOpen, setDrawerOpen] = useState(true)
   const [query, setQuery] = useState('')
   const [editingBooks, setEditingBooks] = useState(false)
   const [newItemKind, setNewItemKind] = useState<'text' | 'group' | null>(null)
   const [linkType, setLinkType] = useState<CanvasLinkType>('related')
+  const [arrangeOpen, setArrangeOpen] = useState(false)
+  const [historyVersion, setHistoryVersion] = useState(0)
+  const [selectionOrder, setSelectionOrder] = useState<string[]>([])
+  const undoStack = useRef<CanvasSnapshot[]>([])
+  const redoStack = useRef<CanvasSnapshot[]>([])
+  const dragSnapshot = useRef<CanvasSnapshot | null>(null)
+  const resizeSnapshot = useRef<CanvasSnapshot | null>(null)
   const canvasItems = library.canvasItems.filter((item) => item.canvasId === canvasId)
   const canvasLinks = library.canvasLinks.filter((link) => link.canvasId === canvasId)
 
@@ -202,6 +228,82 @@ function CanvasWorkspaceInner({
   )
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  const snapshotCanvas = useCallback((): CanvasSnapshot => {
+    const currentNodes = getNodes()
+    const nodeById = new Map(currentNodes.map((node) => [node.id, node]))
+    return cloneSnapshot({
+      items: library.canvasItems
+        .filter((item) => item.canvasId === canvasId)
+        .map((item) => {
+          const node = nodeById.get(item.id)
+          return node ? {
+            ...item,
+            x: node.position.x,
+            y: node.position.y,
+            width: node.measured?.width ?? (Number(node.style?.width) || item.width),
+            height: node.measured?.height ?? (Number(node.style?.height) || item.height),
+          } : item
+        }),
+      links: library.canvasLinks.filter((link) => link.canvasId === canvasId),
+    })
+  }, [canvasId, getNodes, library.canvasItems, library.canvasLinks])
+
+  const remember = useCallback((snapshot: CanvasSnapshot) => {
+    undoStack.current.push(cloneSnapshot(snapshot))
+    if (undoStack.current.length > 60) undoStack.current.shift()
+    redoStack.current = []
+    setHistoryVersion((value) => value + 1)
+  }, [])
+
+  const applySnapshot = useCallback(async (snapshot: CanvasSnapshot) => {
+    const currentItems = library.canvasItems.filter((item) => item.canvasId === canvasId)
+    const currentLinks = library.canvasLinks.filter((link) => link.canvasId === canvasId)
+    const itemIds = new Set(snapshot.items.map((item) => item.id))
+    const linkIds = new Set(snapshot.links.map((link) => link.id))
+    onChange({
+      ...library,
+      canvasItems: [
+        ...library.canvasItems.filter((item) => item.canvasId !== canvasId),
+        ...snapshot.items,
+      ],
+      canvasLinks: [
+        ...library.canvasLinks.filter((link) => link.canvasId !== canvasId),
+        ...snapshot.links,
+      ],
+    })
+    setNodes(snapshot.items.map((item) => itemToNode(item, library)))
+    setEdges(snapshot.links.map(linkToEdge))
+    setSelectionOrder([])
+    await Promise.all(currentLinks
+      .filter((link) => !linkIds.has(link.id))
+      .map((link) => deleteCanvasRecord(user, 'canvas_links', link.id).catch(() => undefined)))
+    await Promise.all(currentItems
+      .filter((item) => !itemIds.has(item.id))
+      .map((item) => deleteCanvasRecord(user, 'canvas_items', item.id).catch(() => undefined)))
+    await Promise.all(snapshot.items.map((item) =>
+      saveCanvasItem(user, item).catch(() => undefined),
+    ))
+    await Promise.all(snapshot.links.map((link) =>
+      saveCanvasLink(user, link).catch(() => undefined),
+    ))
+  }, [canvasId, library, onChange, setEdges, setNodes, user])
+
+  const undo = useCallback(() => {
+    const previous = undoStack.current.pop()
+    if (!previous) return
+    redoStack.current.push(snapshotCanvas())
+    void applySnapshot(previous)
+    setHistoryVersion((value) => value + 1)
+  }, [applySnapshot, snapshotCanvas])
+
+  const redo = useCallback(() => {
+    const next = redoStack.current.pop()
+    if (!next) return
+    undoStack.current.push(snapshotCanvas())
+    void applySnapshot(next)
+    setHistoryVersion((value) => value + 1)
+  }, [applySnapshot, snapshotCanvas])
 
   if (!canvas) {
     return (
@@ -242,7 +344,22 @@ function CanvasWorkspaceInner({
     }
   }
 
+  const commitItems = async (items: CanvasItem[]) => {
+    if (!items.length) return
+    const changed = new Map(items.map((item) => [item.id, item]))
+    onChange({
+      ...library,
+      canvasItems: library.canvasItems.map((item) => changed.get(item.id) ?? item),
+    })
+    await Promise.all(items.map((item) =>
+      saveCanvasItem(user, item).catch(() => {
+        onMessage('Canvas changes are saved on this device.')
+      }),
+    ))
+  }
+
   const addNote = (noteId: string, x?: number, y?: number) => {
+    remember(snapshotCanvas())
     const timestamp = new Date().toISOString()
     const noteCount = canvasItems.filter((item) => item.kind === 'note').length
     const autoPlaced = x == null || y == null
@@ -261,6 +378,7 @@ function CanvasWorkspaceInner({
   }
 
   const addFreeItem = (kind: 'text' | 'group', value: string) => {
+    remember(snapshotCanvas())
     const timestamp = new Date().toISOString()
     const item: CanvasItem = {
       id: uid(), canvasId: canvas.id, kind, noteId: null,
@@ -277,11 +395,19 @@ function CanvasWorkspaceInner({
     setNewItemKind(null)
   }
 
-  const onConnect = async (connection: Connection) => {
-    if (!connection.source || !connection.target) return
+  const createLink = async (source: string, target: string) => {
+    if (
+      source === target ||
+      library.canvasLinks.some((link) =>
+        link.canvasId === canvas?.id &&
+        link.sourceItemId === source &&
+        link.targetItemId === target,
+      )
+    ) return
+    remember(snapshotCanvas())
     const link: CanvasLink = {
       id: uid(), canvasId: canvas.id,
-      sourceItemId: connection.source, targetItemId: connection.target,
+      sourceItemId: source, targetItemId: target,
       type: linkType, label: linkLabels[linkType], createdAt: new Date().toISOString(),
     }
     setEdges((current) => addEdge(linkToEdge(link), current))
@@ -289,11 +415,23 @@ function CanvasWorkspaceInner({
     try {
       await saveCanvasLink(user, link)
     } catch {
-      onMessage('Connection saved locally until the Connections migration is applied.')
+      onMessage('Connection saved on this device.')
+    }
+  }
+
+  const onConnect = (connection: Connection) => {
+    if (connection.source && connection.target) {
+      void createLink(connection.source, connection.target)
     }
   }
 
   const handleNodesChange = (changes: NodeChange<Node<CanvasNodeData>>[]) => {
+    if (
+      !resizeSnapshot.current &&
+      changes.some((change) => change.type === 'dimensions' && change.resizing)
+    ) {
+      resizeSnapshot.current = snapshotCanvas()
+    }
     onNodesChange(changes)
     changes.forEach((change) => {
       if (
@@ -303,6 +441,10 @@ function CanvasWorkspaceInner({
       ) return
       const existing = library.canvasItems.find((item) => item.id === change.id)
       if (existing) {
+        if (resizeSnapshot.current) {
+          remember(resizeSnapshot.current)
+          resizeSnapshot.current = null
+        }
         void commitItem({
           ...existing,
           width: change.dimensions.width,
@@ -313,10 +455,92 @@ function CanvasWorkspaceInner({
     })
   }
 
+  const handleSelectionChange = ({
+    nodes: selectedNodes,
+  }: OnSelectionChangeParams<Node<CanvasNodeData>, Edge>) => {
+    const selectedIds = selectedNodes.map((node) => node.id)
+    setSelectionOrder((current) => [
+      ...current.filter((id) => selectedIds.includes(id)),
+      ...selectedIds.filter((id) => !current.includes(id)),
+    ])
+  }
+
+  const connectSelected = () => {
+    const connectable = selectionOrder.filter((id) => {
+      const node = nodes.find((item) => item.id === id)
+      return node?.data.kind !== 'group' && node?.selected
+    })
+    if (connectable.length !== 2) {
+      onMessage('Select exactly two cards, then press L to connect them.')
+      return
+    }
+    void createLink(connectable[0], connectable[1])
+  }
+
+  const toggleSelectedLock = () => {
+    const selectedIds = nodes.filter((node) => node.selected).map((node) => node.id)
+    if (!selectedIds.length) return
+    const selectedItems = canvasItems.filter((item) => selectedIds.includes(item.id))
+    const shouldLock = selectedItems.some((item) => !item.locked)
+    remember(snapshotCanvas())
+    const timestamp = new Date().toISOString()
+    const updated = selectedItems.map((item) => ({
+      ...item,
+      locked: shouldLock,
+      updatedAt: timestamp,
+    }))
+    const changed = new Map(updated.map((item) => [item.id, item]))
+    setNodes((current) => current.map((node) =>
+      changed.has(node.id)
+        ? { ...node, draggable: !shouldLock, data: { ...node.data, locked: shouldLock } }
+        : node,
+    ))
+    void commitItems(updated)
+  }
+
+  const arrangeCanvas = (mode: 'overlap' | 'hierarchy') => {
+    const selectedIds = nodes.filter((node) => node.selected).map((node) => node.id)
+    const scopedIds = selectedIds.length > 1
+      ? new Set(selectedIds)
+      : new Set(nodes.filter((node) => node.data.kind !== 'group').map((node) => node.id))
+    const movableIds = new Set(
+      canvasItems
+        .filter((item) => scopedIds.has(item.id) && !item.locked && item.kind !== 'group')
+        .map((item) => item.id),
+    )
+    if (movableIds.size < 2) {
+      onMessage('Select at least two unlocked cards to arrange.')
+      return
+    }
+    remember(snapshotCanvas())
+    const arranged = mode === 'overlap'
+      ? removeNodeOverlaps(nodes, movableIds)
+      : arrangeNodeHierarchy(nodes, edges, movableIds)
+    setNodes(arranged)
+    const timestamp = new Date().toISOString()
+    const arrangedById = new Map(arranged.map((node) => [node.id, node]))
+    const updatedItems = canvasItems
+      .filter((item) => movableIds.has(item.id))
+      .map((item) => {
+        const node = arrangedById.get(item.id)!
+        return { ...item, x: node.position.x, y: node.position.y, updatedAt: timestamp }
+      })
+    void commitItems(updatedItems)
+    setArrangeOpen(false)
+    window.setTimeout(() => fitView({ nodes: arranged.filter((node) => scopedIds.has(node.id)), padding: 0.18, maxZoom: 1.15 }), 50)
+  }
+
+  const clearSelection = () => {
+    setNodes((current) => current.map((node) => ({ ...node, selected: false })))
+    setEdges((current) => current.map((edge) => ({ ...edge, selected: false })))
+    setSelectionOrder([])
+  }
+
   const removeSelected = async () => {
     const selectedNodes = nodes.filter((node) => node.selected).map((node) => node.id)
     const selectedEdges = edges.filter((edge) => edge.selected).map((edge) => edge.id)
     if (!selectedNodes.length && !selectedEdges.length) return
+    remember(snapshotCanvas())
     const removedLinks = library.canvasLinks.filter(
       (link) =>
         selectedEdges.includes(link.id) ||
@@ -352,8 +576,52 @@ function CanvasWorkspaceInner({
     navigate('/connections')
   }
 
+  const selectedNodeIds = nodes.filter((node) => node.selected).map((node) => node.id)
+  const selectedItems = canvasItems.filter((item) => selectedNodeIds.includes(item.id))
+  const selectionIsLocked = selectedItems.length > 0 && selectedItems.every((item) => item.locked)
+  const selectedEdge = edges.find((edge) => edge.selected)
+  const displayNodes = selectedEdge
+    ? nodes.map((node) => ({
+        ...node,
+        className: node.id === selectedEdge.source || node.id === selectedEdge.target
+          ? 'connection-endpoint'
+          : 'connection-muted',
+      }))
+    : nodes
+  const canUndo = historyVersion >= 0 && undoStack.current.length > 0
+  const canRedo = historyVersion >= 0 && redoStack.current.length > 0
+
   return (
-    <div className="canvas-workspace">
+    <div
+      className="canvas-workspace"
+      tabIndex={0}
+      onPointerDownCapture={(event) => {
+        const target = event.target as HTMLElement
+        if (!target.closest('input, textarea, select')) event.currentTarget.focus()
+        const nodeElement = target.closest<HTMLElement>('.react-flow__node')
+        const nodeId = nodeElement?.dataset.id
+        if (event.shiftKey && nodeId) {
+          const selectedBefore = new Set(
+            nodes.filter((node) => node.selected).map((node) => node.id),
+          )
+          const wasSelected = selectedBefore.has(nodeId)
+          window.setTimeout(() => {
+            setNodes((current) => current.map((node) => ({
+              ...node,
+              selected: node.id === nodeId
+                ? !wasSelected
+                : selectedBefore.has(node.id),
+            })))
+          }, 0)
+        }
+      }}
+    >
+      <CanvasKeyboardShortcuts
+        onUndo={undo}
+        onRedo={redo}
+        onLink={connectSelected}
+        onEscape={clearSelection}
+      />
       <header className="canvas-workspace-header">
         <button className="icon-button" onClick={() => navigate('/connections')}><ArrowLeft size={18} /></button>
         <div className="canvas-title-block">
@@ -370,11 +638,39 @@ function CanvasWorkspaceInner({
           <button className="add-books-chip" onClick={() => setEditingBooks(true)}>+ Books</button>
         </div>
         <div className="canvas-toolbar">
+          <div className="canvas-history-controls">
+            <button className="icon-button" disabled={!canUndo} title="Undo (Ctrl/Cmd + Z)" onClick={undo}><Undo2 size={16} /></button>
+            <button className="icon-button" disabled={!canRedo} title="Redo (Ctrl/Cmd + Shift + Z)" onClick={redo}><Redo2 size={16} /></button>
+          </div>
           <button className="button subtle compact" onClick={() => setNewItemKind('text')}><StickyNote size={15} /> Thought</button>
           <button className="button subtle compact" onClick={() => setNewItemKind('group')}><Group size={15} /> Group</button>
           <select value={linkType} onChange={(event) => setLinkType(event.target.value as CanvasLinkType)} aria-label="Connection type">
             {Object.entries(linkLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
+          <button className="button subtle compact" disabled={selectedNodeIds.length !== 2} title="Connect two selected cards (L)" onClick={connectSelected}>
+            <span>Link</span><kbd>L</kbd>
+          </button>
+          <button className="icon-button" disabled={!selectedNodeIds.length} title={selectionIsLocked ? 'Unlock selected cards' : 'Lock selected cards'} onClick={toggleSelectedLock}>
+            {selectionIsLocked ? <Unlock size={16} /> : <Lock size={16} />}
+          </button>
+          <div className="arrange-control">
+            <button className="button subtle compact" onClick={() => setArrangeOpen(!arrangeOpen)}>
+              <WandSparkles size={15} /> Arrange <ChevronDown size={13} />
+            </button>
+            {arrangeOpen && (
+              <div className="arrange-menu">
+                <p>{selectedNodeIds.length > 1 ? `Arrange ${selectedNodeIds.length} selected cards` : 'Arrange all unlocked cards'}</p>
+                <button onClick={() => arrangeCanvas('overlap')}>
+                  <AlignHorizontalDistributeCenter size={17} />
+                  <span><strong>Remove overlaps</strong><small>Keep the rough shape, add breathing room.</small></span>
+                </button>
+                <button onClick={() => arrangeCanvas('hierarchy')}>
+                  <Layers3 size={17} />
+                  <span><strong>Hierarchy</strong><small>Follow the direction of your connections.</small></span>
+                </button>
+              </div>
+            )}
+          </div>
           <button className="icon-button" title="Fit all" onClick={() => fitView({ padding: 0.2 })}><Layers3 size={17} /></button>
           <button className="icon-button" title="Delete selected" onClick={removeSelected}><Trash2 size={17} /></button>
           <button className="icon-button" title="Delete canvas" onClick={removeCanvas}><FolderX size={17} /></button>
@@ -417,15 +713,31 @@ function CanvasWorkspaceInner({
         </aside>
         <div className="flow-shell">
           <ReactFlow
-            nodes={nodes}
+            nodes={displayNodes}
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
+            onSelectionChange={handleSelectionChange}
             onConnect={onConnect}
-            onNodeDragStop={(_event, node) => {
-              const existing = library.canvasItems.find((item) => item.id === node.id)
-              if (existing) void commitItem({ ...existing, x: node.position.x, y: node.position.y, updatedAt: new Date().toISOString() })
+            onNodeDragStart={() => {
+              dragSnapshot.current = snapshotCanvas()
+            }}
+            onNodeDragStop={() => {
+              if (dragSnapshot.current) {
+                remember(dragSnapshot.current)
+                dragSnapshot.current = null
+              }
+              const timestamp = new Date().toISOString()
+              const currentNodes = getNodes()
+              const currentById = new Map(currentNodes.map((node) => [node.id, node]))
+              const movedItems = canvasItems
+                .filter((item) => currentById.has(item.id))
+                .map((item) => {
+                  const node = currentById.get(item.id)!
+                  return { ...item, x: node.position.x, y: node.position.y, updatedAt: timestamp }
+                })
+              void commitItems(movedItems)
             }}
             onDrop={(event) => {
               event.preventDefault()
@@ -442,6 +754,13 @@ function CanvasWorkspaceInner({
             fitViewOptions={{ padding: 0.2, maxZoom: 1.1 }}
             minZoom={0.25}
             maxZoom={2}
+            panOnScroll
+            zoomOnPinch
+            panOnDrag={[1, 2]}
+            selectionOnDrag
+            selectionMode={SelectionMode.Partial}
+            multiSelectionKeyCode="Shift"
+            selectionKeyCode={null}
             deleteKeyCode={null}
           >
             <Background color="#c9c0b1" gap={22} size={1} />
@@ -488,6 +807,7 @@ type CanvasNodeData = {
   content: string
   label: string
   color: string
+  locked: boolean
 }
 
 const nodeTypes = {
@@ -496,11 +816,48 @@ const nodeTypes = {
   groupCard: CanvasNode,
 }
 
+function CanvasKeyboardShortcuts({
+  onUndo,
+  onRedo,
+  onLink,
+  onEscape,
+}: {
+  onUndo: () => void
+  onRedo: () => void
+  onLink: () => void
+  onEscape: () => void
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement
+      ) return
+      const modifier = event.metaKey || event.ctrlKey
+      if (modifier && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) onRedo()
+        else onUndo()
+      } else if (!modifier && !event.altKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        onLink()
+      } else if (event.key === 'Escape') {
+        onEscape()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onEscape, onLink, onRedo, onUndo])
+  return null
+}
+
 function CanvasNode({ data, selected }: NodeProps<Node<CanvasNodeData>>) {
   const isGroup = data.kind === 'group'
   return (
-    <div className={`flow-node ${data.kind} ${selected ? 'selected' : ''}`} style={{ '--node-color': data.color } as React.CSSProperties}>
-      <NodeResizer isVisible={selected} minWidth={isGroup ? 260 : 210} minHeight={isGroup ? 180 : 120} />
+    <div className={`flow-node ${data.kind} ${selected ? 'selected' : ''} ${data.locked ? 'locked' : ''}`} style={{ '--node-color': data.color } as React.CSSProperties}>
+      <NodeResizer isVisible={selected && !data.locked} minWidth={isGroup ? 260 : 210} minHeight={isGroup ? 180 : 120} />
+      {data.locked && <span className="node-lock" title="This card is locked"><Lock size={12} /></span>}
       {!isGroup && <><Handle type="target" position={Position.Left} /><Handle type="source" position={Position.Right} /></>}
       {isGroup ? (
         <strong className="group-label">{data.label}</strong>
@@ -528,19 +885,134 @@ function itemToNode(item: CanvasItem, library: LibraryData): Node<CanvasNodeData
     type: item.kind === 'note' ? 'noteCard' : item.kind === 'text' ? 'textCard' : 'groupCard',
     position: { x: item.x, y: item.y },
     style: { width: item.width, height: item.height, zIndex: item.kind === 'group' ? -1 : 2 },
-    data: { kind: item.kind, note, book, content: item.content, label: item.label, color: item.color },
+    draggable: !item.locked,
+    data: {
+      kind: item.kind,
+      note,
+      book,
+      content: item.content,
+      label: item.label,
+      color: item.color,
+      locked: item.locked ?? false,
+    },
   }
 }
 
 function linkToEdge(link: CanvasLink): Edge {
   return {
     id: link.id, source: link.sourceItemId, target: link.targetItemId,
-    label: link.label || linkLabels[link.type], type: 'bezier',
+    label: link.label || linkLabels[link.type], type: 'default',
     markerEnd: { type: MarkerType.ArrowClosed, color: '#9d4628' },
     style: { stroke: link.type === 'contradicts' ? '#9a4b48' : '#9d6249', strokeWidth: 1.6 },
     labelStyle: { fill: '#7d4b37', fontSize: 11, fontFamily: 'DM Mono' },
     labelBgStyle: { fill: '#f4f0e7', fillOpacity: 0.92 },
   }
+}
+
+function nodeDimensions(node: Node<CanvasNodeData>) {
+  return {
+    width: node.measured?.width ?? (Number(node.style?.width) || 270),
+    height: node.measured?.height ?? (Number(node.style?.height) || 170),
+  }
+}
+
+function nodesOverlap(a: Node<CanvasNodeData>, b: Node<CanvasNodeData>, gap = 28) {
+  const aSize = nodeDimensions(a)
+  const bSize = nodeDimensions(b)
+  return !(
+    a.position.x + aSize.width + gap <= b.position.x ||
+    b.position.x + bSize.width + gap <= a.position.x ||
+    a.position.y + aSize.height + gap <= b.position.y ||
+    b.position.y + bSize.height + gap <= a.position.y
+  )
+}
+
+function removeNodeOverlaps(
+  nodes: Node<CanvasNodeData>[],
+  movableIds: Set<string>,
+) {
+  const arranged = nodes.map((node) => ({ ...node, position: { ...node.position } }))
+  const movable = arranged
+    .filter((node) => movableIds.has(node.id))
+    .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
+
+  movable.forEach((node) => {
+    let attempts = 0
+    while (attempts < 80) {
+      const collision = arranged.find((other) =>
+        other.id !== node.id && nodesOverlap(node, other),
+      )
+      if (!collision) break
+      const otherSize = nodeDimensions(collision)
+      const moveRight = collision.position.x + otherSize.width + 34 - node.position.x
+      const moveDown = collision.position.y + otherSize.height + 34 - node.position.y
+      if (moveRight < moveDown) node.position.x += Math.max(24, moveRight)
+      else node.position.y += Math.max(24, moveDown)
+      attempts += 1
+    }
+  })
+  return arranged
+}
+
+function arrangeNodeHierarchy(
+  nodes: Node<CanvasNodeData>[],
+  edges: Edge[],
+  movableIds: Set<string>,
+) {
+  const scopedNodes = nodes.filter((node) => movableIds.has(node.id))
+  const indegree = new Map(scopedNodes.map((node) => [node.id, 0]))
+  const outgoing = new Map(scopedNodes.map((node) => [node.id, [] as string[]]))
+  edges.forEach((edge) => {
+    if (!movableIds.has(String(edge.source)) || !movableIds.has(String(edge.target))) return
+    outgoing.get(String(edge.source))?.push(String(edge.target))
+    indegree.set(String(edge.target), (indegree.get(String(edge.target)) ?? 0) + 1)
+  })
+
+  const layers = new Map<string, number>()
+  const queue = scopedNodes
+    .filter((node) => indegree.get(node.id) === 0)
+    .map((node) => node.id)
+  queue.forEach((id) => layers.set(id, 0))
+  while (queue.length) {
+    const id = queue.shift()!
+    const nextLayer = (layers.get(id) ?? 0) + 1
+    outgoing.get(id)?.forEach((target) => {
+      layers.set(target, Math.max(layers.get(target) ?? 0, nextLayer))
+      indegree.set(target, (indegree.get(target) ?? 1) - 1)
+      if (indegree.get(target) === 0) queue.push(target)
+    })
+  }
+  scopedNodes.forEach((node) => {
+    if (!layers.has(node.id)) layers.set(node.id, 0)
+  })
+
+  const originX = Math.min(...scopedNodes.map((node) => node.position.x))
+  const originY = Math.min(...scopedNodes.map((node) => node.position.y))
+  const columns = new Map<number, Node<CanvasNodeData>[]>()
+  scopedNodes.forEach((node) => {
+    const layer = layers.get(node.id) ?? 0
+    columns.set(layer, [...(columns.get(layer) ?? []), node])
+  })
+  const positions = new Map<string, { x: number; y: number }>()
+  let columnX = originX
+  ;[...columns.entries()].sort(([a], [b]) => a - b).forEach(([, column]) => {
+    let rowY = originY
+    const widest = Math.max(...column.map((node) => nodeDimensions(node).width))
+    column
+      .sort((a, b) => a.position.y - b.position.y)
+      .forEach((node) => {
+        positions.set(node.id, { x: columnX, y: rowY })
+        rowY += nodeDimensions(node).height + 70
+      })
+    columnX += widest + 130
+  })
+
+  return removeNodeOverlaps(
+    nodes.map((node) => positions.has(node.id)
+      ? { ...node, position: positions.get(node.id)! }
+      : node),
+    movableIds,
+  )
 }
 
 function CanvasForm({ books, onClose, onSave }: { books: Book[]; onClose: () => void; onSave: (canvas: Canvas) => void }) {
