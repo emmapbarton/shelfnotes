@@ -57,6 +57,7 @@ export interface CanvasItem {
   height: number
   color: string
   locked?: boolean
+  compact?: boolean
   createdAt: string
   updatedAt: string
 }

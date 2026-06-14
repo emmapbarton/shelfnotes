@@ -21,6 +21,8 @@ import {
   type NodeChange,
   type NodeProps,
   type OnSelectionChangeParams,
+  type OnConnectStartParams,
+  type FinalConnectionState,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
@@ -29,11 +31,14 @@ import {
   BookMarked,
   ChevronDown,
   ChevronRight,
+  Eye,
+  EyeOff,
   FolderPlus,
   FolderX,
   Group,
   Layers3,
   Lock,
+  Pencil,
   Plus,
   Redo2,
   Search,
@@ -42,6 +47,7 @@ import {
   Undo2,
   Unlock,
   WandSparkles,
+  XCircle,
   X,
 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -50,9 +56,11 @@ import {
   saveCanvas,
   saveCanvasItem,
   saveCanvasLink,
+  saveNote,
   uid,
 } from '../lib/data'
 import { richTextPreview } from '../lib/richText'
+import { RichContent, RichTextEditor } from './RichTextEditor'
 import type {
   Book,
   Canvas,
@@ -206,12 +214,21 @@ function CanvasWorkspaceInner({
   const [newItemKind, setNewItemKind] = useState<'text' | 'group' | null>(null)
   const [linkType, setLinkType] = useState<CanvasLinkType>('related')
   const [arrangeOpen, setArrangeOpen] = useState(false)
+  const [pendingNote, setPendingNote] = useState<{
+    noteId: string
+    x?: number
+    y?: number
+  } | null>(null)
+  const [inspectorItemId, setInspectorItemId] = useState<string | null>(null)
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [selectionOrder, setSelectionOrder] = useState<string[]>([])
   const undoStack = useRef<CanvasSnapshot[]>([])
   const redoStack = useRef<CanvasSnapshot[]>([])
   const dragSnapshot = useRef<CanvasSnapshot | null>(null)
   const resizeSnapshot = useRef<CanvasSnapshot | null>(null)
+  const connectingFrom = useRef<string | null>(null)
+  const connectionCompleted = useRef(false)
   const canvasItems = library.canvasItems.filter((item) => item.canvasId === canvasId)
   const canvasLinks = library.canvasLinks.filter((link) => link.canvasId === canvasId)
 
@@ -358,23 +375,28 @@ function CanvasWorkspaceInner({
     ))
   }
 
-  const addNote = (noteId: string, x?: number, y?: number) => {
+  const addNote = (noteId: string, label: string, x?: number, y?: number) => {
     remember(snapshotCanvas())
     const timestamp = new Date().toISOString()
     const noteCount = canvasItems.filter((item) => item.kind === 'note').length
     const autoPlaced = x == null || y == null
     const item: CanvasItem = {
       id: uid(), canvasId: canvas.id, kind: 'note', noteId,
-      content: '', label: '',
+      content: '', label: label.trim(),
       x: x ?? 180 + (noteCount % 4) * 310,
       y: y ?? 130 + Math.floor(noteCount / 4) * 220,
       width: 270, height: 170,
       color: colorForBook(library.notes.find((note) => note.id === noteId)?.bookId, canvas.bookIds),
+      compact: false,
       createdAt: timestamp, updatedAt: timestamp,
     }
     setNodes((current) => [...current, itemToNode(item, library)])
     void commitItem(item)
     if (autoPlaced) window.setTimeout(() => fitView({ padding: 0.2, maxZoom: 1.1 }), 50)
+  }
+
+  const promptForNote = (noteId: string, x?: number, y?: number) => {
+    setPendingNote({ noteId, x, y })
   }
 
   const addFreeItem = (kind: 'text' | 'group', value: string) => {
@@ -421,7 +443,63 @@ function CanvasWorkspaceInner({
 
   const onConnect = (connection: Connection) => {
     if (connection.source && connection.target) {
+      connectionCompleted.current = true
       void createLink(connection.source, connection.target)
+    }
+  }
+
+  const updateCanvasItem = (item: CanvasItem) => {
+    remember(snapshotCanvas())
+    setNodes((current) => current.map((node) =>
+      node.id === item.id ? itemToNode(item, library) : node,
+    ))
+    void commitItem(item)
+  }
+
+  const updateLink = async (link: CanvasLink) => {
+    remember(snapshotCanvas())
+    setEdges((current) => current.map((edge) =>
+      edge.id === link.id ? { ...linkToEdge(link), selected: true } : edge,
+    ))
+    onChange({
+      ...library,
+      canvasLinks: library.canvasLinks.map((current) =>
+        current.id === link.id ? link : current,
+      ),
+    })
+    try {
+      await saveCanvasLink(user, link)
+    } catch {
+      onMessage('Connection changes are saved on this device.')
+    }
+  }
+
+  const deleteLink = async (linkId: string) => {
+    remember(snapshotCanvas())
+    setEdges((current) => current.filter((edge) => edge.id !== linkId))
+    onChange({
+      ...library,
+      canvasLinks: library.canvasLinks.filter((link) => link.id !== linkId),
+    })
+    setEditingLinkId(null)
+    await deleteCanvasRecord(user, 'canvas_links', linkId).catch(() => undefined)
+  }
+
+  const saveOriginalNote = async (note: Note) => {
+    onChange({
+      ...library,
+      notes: library.notes.map((current) => current.id === note.id ? note : current),
+    })
+    setNodes((current) => current.map((node) =>
+      node.data.note?.id === note.id
+        ? { ...node, data: { ...node.data, note } }
+        : node,
+    ))
+    try {
+      await saveNote(user, note)
+      onMessage('Note updated.')
+    } catch {
+      onMessage('Note updated on this device.')
     }
   }
 
@@ -536,6 +614,35 @@ function CanvasWorkspaceInner({
     setSelectionOrder([])
   }
 
+  const handleConnectStart = (
+    _event: MouseEvent | TouchEvent,
+    params: OnConnectStartParams,
+  ) => {
+    connectingFrom.current = params.nodeId
+    connectionCompleted.current = false
+  }
+
+  const handleConnectEnd = (
+    event: MouseEvent | TouchEvent,
+    state: FinalConnectionState,
+  ) => {
+    const sourceId = connectingFrom.current
+    connectingFrom.current = null
+    if (!sourceId || connectionCompleted.current || state.isValid) return
+    const point = 'changedTouches' in event
+      ? event.changedTouches[0]
+      : event
+    const target = document
+      .elementsFromPoint(point.clientX, point.clientY)
+      .map((element) => element.closest<HTMLElement>('.react-flow__node'))
+      .find(Boolean)
+    const targetId = target?.dataset.id
+    if (!targetId || targetId === sourceId) return
+    const targetNode = nodes.find((node) => node.id === targetId)
+    if (targetNode?.data.kind === 'group') return
+    void createLink(sourceId, targetId)
+  }
+
   const removeSelected = async () => {
     const selectedNodes = nodes.filter((node) => node.selected).map((node) => node.id)
     const selectedEdges = edges.filter((edge) => edge.selected).map((edge) => edge.id)
@@ -564,6 +671,30 @@ function CanvasWorkspaceInner({
     ])
   }
 
+  const removeItem = async (itemId: string) => {
+    remember(snapshotCanvas())
+    const relatedLinks = library.canvasLinks.filter((link) =>
+      link.sourceItemId === itemId || link.targetItemId === itemId,
+    )
+    setNodes((current) => current.filter((node) => node.id !== itemId))
+    setEdges((current) => current.filter((edge) =>
+      edge.source !== itemId && edge.target !== itemId,
+    ))
+    onChange({
+      ...library,
+      canvasItems: library.canvasItems.filter((item) => item.id !== itemId),
+      canvasLinks: library.canvasLinks.filter((link) =>
+        !relatedLinks.some((related) => related.id === link.id),
+      ),
+    })
+    await Promise.all([
+      deleteCanvasRecord(user, 'canvas_items', itemId).catch(() => undefined),
+      ...relatedLinks.map((link) =>
+        deleteCanvasRecord(user, 'canvas_links', link.id).catch(() => undefined),
+      ),
+    ])
+  }
+
   const removeCanvas = async () => {
     if (!window.confirm(`Delete “${canvas.title}”? Your books and notes will not be deleted.`)) return
     onChange({
@@ -580,6 +711,16 @@ function CanvasWorkspaceInner({
   const selectedItems = canvasItems.filter((item) => selectedNodeIds.includes(item.id))
   const selectionIsLocked = selectedItems.length > 0 && selectedItems.every((item) => item.locked)
   const selectedEdge = edges.find((edge) => edge.selected)
+  const inspectorItem = canvasItems.find((item) => item.id === inspectorItemId)
+  const inspectorNote = inspectorItem?.noteId
+    ? library.notes.find((note) => note.id === inspectorItem.noteId)
+    : undefined
+  const inspectorBook = inspectorNote
+    ? library.books.find((book) => book.id === inspectorNote.bookId)
+    : undefined
+  const editingLink = library.canvasLinks.find((link) =>
+    link.id === (editingLinkId ?? selectedEdge?.id),
+  )
   const displayNodes = selectedEdge
     ? nodes.map((node) => ({
         ...node,
@@ -614,6 +755,18 @@ function CanvasWorkspaceInner({
             })))
           }, 0)
         }
+      }}
+      onPointerUpCapture={(event) => {
+        const sourceId = connectingFrom.current
+        const targetId = (event.target as HTMLElement)
+          .closest<HTMLElement>('.react-flow__node')
+          ?.dataset.id
+        if (!sourceId || !targetId || sourceId === targetId) return
+        const targetNode = nodes.find((node) => node.id === targetId)
+        if (targetNode?.data.kind === 'group') return
+        window.setTimeout(() => {
+          if (!connectionCompleted.current) void createLink(sourceId, targetId)
+        }, 0)
       }}
     >
       <CanvasKeyboardShortcuts
@@ -702,7 +855,7 @@ function CanvasWorkspaceInner({
                       <span style={{ background: colorForBook(note.bookId, canvas.bookIds) }} />
                       <p>{book?.title} · {pageText(note)}</p>
                       <strong>{richTextPreview(note.content)}</strong>
-                      <button onClick={() => addNote(note.id)}><Plus size={15} /></button>
+                      <button onClick={() => promptForNote(note.id)}><Plus size={15} /></button>
                     </article>
                   )
                 })}
@@ -720,6 +873,17 @@ function CanvasWorkspaceInner({
             onEdgesChange={onEdgesChange}
             onSelectionChange={handleSelectionChange}
             onConnect={onConnect}
+            onConnectStart={handleConnectStart}
+            onConnectEnd={handleConnectEnd}
+            onNodeClick={(_event, node) => {
+              if (node.data.kind !== 'note') return
+              setInspectorItemId(node.id)
+              setEditingLinkId(null)
+            }}
+            onEdgeClick={(_event, edge) => {
+              setEditingLinkId(edge.id)
+              setInspectorItemId(null)
+            }}
             onNodeDragStart={() => {
               dragSnapshot.current = snapshotCanvas()
             }}
@@ -744,7 +908,7 @@ function CanvasWorkspaceInner({
               const noteId = event.dataTransfer.getData('application/shelf-note')
               if (!noteId) return
               const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-              addNote(noteId, position.x, position.y)
+              promptForNote(noteId, position.x, position.y)
             }}
             onDragOver={(event) => {
               event.preventDefault()
@@ -767,6 +931,32 @@ function CanvasWorkspaceInner({
             <Controls position="bottom-right" />
             <MiniMap position="bottom-right" pannable zoomable />
           </ReactFlow>
+          {inspectorItem && inspectorNote && inspectorBook && (
+            <NoteInspector
+              item={inspectorItem}
+              note={inspectorNote}
+              book={inspectorBook}
+              user={user}
+              onClose={() => setInspectorItemId(null)}
+              onSaveItem={(updated) => updateCanvasItem(updated)}
+              onSaveNote={saveOriginalNote}
+              onRemove={() => {
+                void removeItem(inspectorItem.id)
+                setInspectorItemId(null)
+              }}
+            />
+          )}
+          {editingLink && (
+            <ConnectionEditor
+              link={editingLink}
+              onClose={() => {
+                setEditingLinkId(null)
+                setEdges((current) => current.map((edge) => ({ ...edge, selected: false })))
+              }}
+              onSave={updateLink}
+              onDelete={() => void deleteLink(editingLink.id)}
+            />
+          )}
         </div>
       </div>
       {editingBooks && (
@@ -789,6 +979,16 @@ function CanvasWorkspaceInner({
           onSave={(value) => addFreeItem(newItemKind, value)}
         />
       )}
+      {pendingNote && (
+        <NoteHeadingPrompt
+          note={library.notes.find((note) => note.id === pendingNote.noteId)}
+          onClose={() => setPendingNote(null)}
+          onAdd={(heading) => {
+            addNote(pendingNote.noteId, heading, pendingNote.x, pendingNote.y)
+            setPendingNote(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -808,6 +1008,7 @@ type CanvasNodeData = {
   label: string
   color: string
   locked: boolean
+  compact: boolean
 }
 
 const nodeTypes = {
@@ -858,14 +1059,24 @@ function CanvasNode({ data, selected }: NodeProps<Node<CanvasNodeData>>) {
     <div className={`flow-node ${data.kind} ${selected ? 'selected' : ''} ${data.locked ? 'locked' : ''}`} style={{ '--node-color': data.color } as React.CSSProperties}>
       <NodeResizer isVisible={selected && !data.locked} minWidth={isGroup ? 260 : 210} minHeight={isGroup ? 180 : 120} />
       {data.locked && <span className="node-lock" title="This card is locked"><Lock size={12} /></span>}
-      {!isGroup && <><Handle type="target" position={Position.Left} /><Handle type="source" position={Position.Right} /></>}
+      {!isGroup && <>
+        <Handle id="target" type="target" position={Position.Left} />
+        <Handle id="source" type="source" position={Position.Right} />
+      </>}
       {isGroup ? (
         <strong className="group-label">{data.label}</strong>
       ) : data.kind === 'note' ? (
         <>
           <p className="flow-node-meta">{data.book?.title} · {data.note ? pageText(data.note) : ''}</p>
-          <strong>{data.note ? richTextPreview(data.note.content) : ''}</strong>
-          <div className="flow-node-tags">{data.note?.tags.slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
+          <strong className={`flow-node-heading ${data.label ? '' : 'empty'}`}>
+            {data.label || 'Add a key point…'}
+          </strong>
+          {!data.compact && (
+            <>
+              <p className="flow-node-preview">{data.note ? richTextPreview(data.note.content) : ''}</p>
+              <div className="flow-node-tags">{data.note?.tags.slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
+            </>
+          )}
         </>
       ) : (
         <>
@@ -894,6 +1105,7 @@ function itemToNode(item: CanvasItem, library: LibraryData): Node<CanvasNodeData
       label: item.label,
       color: item.color,
       locked: item.locked ?? false,
+      compact: item.compact ?? false,
     },
   }
 }
@@ -1012,6 +1224,219 @@ function arrangeNodeHierarchy(
       ? { ...node, position: positions.get(node.id)! }
       : node),
     movableIds,
+  )
+}
+
+function NoteHeadingPrompt({
+  note,
+  onClose,
+  onAdd,
+}: {
+  note?: Note
+  onClose: () => void
+  onAdd: (heading: string) => void
+}) {
+  const [heading, setHeading] = useState('')
+  return (
+    <Dialog title="Add this note to the canvas" onClose={onClose}>
+      <form className="form note-heading-form" onSubmit={(event) => {
+        event.preventDefault()
+        onAdd(heading)
+      }}>
+        <div>
+          <p className="eyebrow">Optional key point</p>
+          <p className="heading-prompt-copy">
+            Give this card a short heading so its role is clear at a glance.
+            You can always add or change it later.
+          </p>
+        </div>
+        {note && <blockquote>{richTextPreview(note.content)}</blockquote>}
+        <label>
+          Key-point heading
+          <input
+            autoFocus
+            value={heading}
+            maxLength={160}
+            onChange={(event) => setHeading(event.target.value)}
+            placeholder="e.g. Supervised learning predicts labelled outcomes"
+          />
+        </label>
+        <div className="form-actions">
+          <button type="button" className="button subtle" onClick={() => onAdd('')}>Skip</button>
+          <button className="button primary">Add to canvas</button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function NoteInspector({
+  item,
+  note,
+  book,
+  user,
+  onClose,
+  onSaveItem,
+  onSaveNote,
+  onRemove,
+}: {
+  item: CanvasItem
+  note: Note
+  book: Book
+  user: User | null
+  onClose: () => void
+  onSaveItem: (item: CanvasItem) => void
+  onSaveNote: (note: Note) => void
+  onRemove: () => void
+}) {
+  const [heading, setHeading] = useState(item.label)
+  const [editing, setEditing] = useState(false)
+  const [content, setContent] = useState(note.content)
+  const [pageStart, setPageStart] = useState(note.pageStart ?? 0)
+  const [pageEnd, setPageEnd] = useState(note.pageEnd ?? 0)
+  const [kind, setKind] = useState<Note['kind']>(note.kind)
+  const [tags, setTags] = useState(note.tags.join(', '))
+  const hasContent = Boolean(richTextPreview(content)) || /<img[\s>]/i.test(content)
+
+  const saveHeading = () => {
+    if (heading === item.label) return
+    onSaveItem({
+      ...item,
+      label: heading.trim(),
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  const toggleCompact = () => {
+    onSaveItem({
+      ...item,
+      compact: !item.compact,
+      height: item.compact ? Math.max(item.height, 170) : 116,
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  const saveEditedNote = () => {
+    const timestamp = new Date().toISOString()
+    onSaveNote({
+      ...note,
+      content: content.trim(),
+      pageStart,
+      pageEnd,
+      kind,
+      tags: tags.split(',').map((tag) => tag.trim().replace(/^#/, '')).filter(Boolean),
+      updatedAt: timestamp,
+    })
+    setEditing(false)
+  }
+
+  return (
+    <aside className="canvas-inspector" aria-label="Note inspector">
+      <header>
+        <div>
+          <p className="eyebrow">Canvas note</p>
+          <h2>{book.title}</h2>
+          <p>{book.author} · {pageText(note)}</p>
+        </div>
+        <button className="icon-button" onClick={onClose}><X size={18} /></button>
+      </header>
+      <div className="inspector-scroll">
+        <label className="inspector-heading">
+          Key-point heading
+          <input
+            value={heading}
+            maxLength={160}
+            onChange={(event) => setHeading(event.target.value)}
+            onBlur={saveHeading}
+            placeholder="Add the key point for this canvas…"
+          />
+        </label>
+        <div className="inspector-actions">
+          <button className="button subtle compact" onClick={toggleCompact}>
+            {item.compact ? <Eye size={15} /> : <EyeOff size={15} />}
+            {item.compact ? 'Expand card' : 'Compact card'}
+          </button>
+          <button className="button subtle compact" onClick={() => setEditing(!editing)}>
+            <Pencil size={15} /> {editing ? 'Stop editing' : 'Edit original note'}
+          </button>
+        </div>
+        {editing ? (
+          <div className="inspector-editor">
+            <div className="form-row">
+              <label>From page<input type="number" min="0" value={pageStart} onChange={(event) => setPageStart(Number(event.target.value))} /></label>
+              <label>To page<input type="number" min="0" value={pageEnd} onChange={(event) => setPageEnd(Number(event.target.value))} /></label>
+              <label>Type<select value={kind} onChange={(event) => setKind(event.target.value as Note['kind'])}><option value="note">Note</option><option value="quote">Quote</option><option value="question">Question</option></select></label>
+            </div>
+            <RichTextEditor value={content} onChange={setContent} user={user} bookId={book.id} />
+            <label className="inspector-tags">Tags<input value={tags} onChange={(event) => setTags(event.target.value)} /></label>
+            <button className="button primary inspector-save" disabled={!hasContent} onClick={saveEditedNote}>
+              Save note changes
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="inspector-note-meta">
+              <span>{note.kind}</span>
+              {note.tags.map((tag) => <span key={tag}>#{tag}</span>)}
+            </div>
+            <RichContent content={note.content} />
+          </>
+        )}
+      </div>
+      <footer>
+        <button className="text-button danger" onClick={onRemove}><Trash2 size={15} /> Remove from canvas</button>
+      </footer>
+    </aside>
+  )
+}
+
+function ConnectionEditor({
+  link,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  link: CanvasLink
+  onClose: () => void
+  onSave: (link: CanvasLink) => void
+  onDelete: () => void
+}) {
+  const [type, setType] = useState<CanvasLinkType>(link.type)
+  const [label, setLabel] = useState(link.label)
+  return (
+    <aside className="connection-inspector" aria-label="Connection editor">
+      <header>
+        <div><p className="eyebrow">Connection</p><h2>Edit relationship</h2></div>
+        <button className="icon-button" onClick={onClose}><X size={17} /></button>
+      </header>
+      <label>Relationship
+        <select value={type} onChange={(event) => {
+          const nextType = event.target.value as CanvasLinkType
+          setType(nextType)
+          if (label === link.label || label === linkLabels[type]) setLabel(linkLabels[nextType])
+        }}>
+          {Object.entries(linkLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select>
+      </label>
+      <label>Connection label
+        <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Add a short explanation…" />
+      </label>
+      <button className="button subtle" onClick={() => onSave({
+        ...link,
+        sourceItemId: link.targetItemId,
+        targetItemId: link.sourceItemId,
+        type,
+        label: label.trim() || linkLabels[type],
+      })}>Reverse direction</button>
+      <div className="connection-editor-actions">
+        <button className="text-button danger" onClick={onDelete}><XCircle size={15} /> Delete</button>
+        <button className="button primary" onClick={() => onSave({
+          ...link,
+          type,
+          label: label.trim() || linkLabels[type],
+        })}>Save connection</button>
+      </div>
+    </aside>
   )
 }
 
