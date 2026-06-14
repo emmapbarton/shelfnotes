@@ -99,6 +99,35 @@ export function RichTextEditor({
     emitChange()
   }
 
+  const toggleHighlight = () => {
+    editorRef.current?.focus({ preventScroll: true })
+    restoreSelection()
+    const selection = window.getSelection()
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+    const startElement = range?.startContainer instanceof Element
+      ? range.startContainer
+      : range?.startContainer.parentElement
+    const highlightedAncestor = startElement?.closest('mark, [style]')
+    const highlightedSelection = range && editorRef.current
+      ? Array.from(editorRef.current.querySelectorAll('mark, [style]')).find(
+          (element) =>
+            range.intersectsNode(element) &&
+            isEditorHighlight(getComputedStyle(element).backgroundColor),
+        )
+      : null
+    const isHighlighted = highlightedAncestor
+      ? isEditorHighlight(getComputedStyle(highlightedAncestor).backgroundColor)
+      : Boolean(highlightedSelection)
+    document.execCommand(
+      'hiliteColor',
+      false,
+      isHighlighted ? 'transparent' : '#f3d77a',
+    )
+    collapseSelectionToEnd()
+    rememberSelection()
+    emitChange()
+  }
+
   const emitChange = () => {
     rememberSelection()
     onChange(editorRef.current?.innerHTML ?? '')
@@ -177,7 +206,7 @@ export function RichTextEditor({
         </ToolbarButton>
         <ToolbarButton
           label="Highlight"
-          onRun={() => runCommand('hiliteColor', '#f3d77a')}
+          onRun={toggleHighlight}
         >
           <Highlighter size={16} />
         </ToolbarButton>
@@ -275,6 +304,13 @@ export function RichTextEditor({
       {uploadError && <p className="editor-error">{uploadError}</p>}
     </div>
   )
+}
+
+function isEditorHighlight(value: string) {
+  return [
+    'rgb(243, 215, 122)',
+    'rgba(243, 215, 122, 1)',
+  ].includes(value.toLowerCase())
 }
 
 function ToolbarButton({

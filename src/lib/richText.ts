@@ -32,7 +32,7 @@ export function sanitiseRichText(content: string) {
     }
     if (
       (element.tagName === 'SPAN' || element.tagName === 'MARK') &&
-      background
+      isHighlightColor(background)
     ) {
       element.style.backgroundColor = '#f3d77a'
     }
@@ -56,6 +56,14 @@ export async function refreshPrivateImages(root: ParentNode) {
       if (data?.signedUrl) image.src = data.signedUrl
     }),
   )
+}
+
+function isHighlightColor(value: string) {
+  return [
+    '#f3d77a',
+    'rgb(243, 215, 122)',
+    'rgba(243, 215, 122, 1)',
+  ].includes(value.toLowerCase())
 }
 
 function escapeHtml(value: string) {

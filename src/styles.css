@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Libre+Caslon+Display&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
 :root {
   color: #201d18;
@@ -15,6 +15,7 @@
   --line: #d7cfbf;
   --muted: #746e64;
   --serif: 'Libre Caslon Display', Georgia, serif;
+  --reading-serif: 'Libre Caslon Text', Georgia, serif;
 }
 
 * { box-sizing: border-box; }
@@ -169,7 +170,7 @@ button { color: inherit; }
 .rich-toolbar button:hover { background: var(--card); border-color: var(--line); color: var(--rust); }
 .toolbar-divider { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
 .upload-status { color: var(--muted); font: .62rem 'DM Mono'; margin-left: 5px; }
-.rich-editor { min-height: 210px; padding: 16px; outline: none; color: var(--ink); font: 1rem/1.65 var(--serif); }
+.rich-editor { min-height: 210px; padding: 16px; outline: none; color: var(--ink); font: 1rem/1.65 var(--reading-serif); }
 .rich-editor:empty::before { content: attr(data-placeholder); color: #9b9489; pointer-events: none; }
 .rich-editor p, .rich-content p { margin: .3em 0 .8em; }
 .rich-editor ul, .rich-editor ol, .rich-content ul, .rich-content ol { padding-left: 1.5em; margin: .4em 0 .9em; }
@@ -184,7 +185,7 @@ button { color: inherit; }
 .image-resizer button { border: 0; background: none; color: var(--rust); cursor: pointer; font: inherit; }
 .editor-help { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--line); color: var(--muted); font: .61rem 'DM Mono'; }
 .editor-error { margin: 0; padding: 8px 12px 10px; border-top: 1px solid #e1b7ae; background: #fff0ed; color: #9b3424; font: .64rem 'DM Mono'; }
-.rich-content { color: var(--ink); font: 1.06rem/1.65 var(--serif); overflow-wrap: anywhere; }
+.rich-content { color: var(--ink); font: 1.06rem/1.65 var(--reading-serif); overflow-wrap: anywhere; }
 .rich-content > :first-child { margin-top: 0; }
 .rich-content > :last-child { margin-bottom: 0; }
 
