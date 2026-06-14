@@ -277,7 +277,7 @@ button { color: inherit; }
 .flow-shell .react-flow__controls { right: 178px; bottom: 16px; box-shadow: none; border: 1px solid var(--line); }
 .flow-shell .react-flow__controls-button { background: var(--card); border-color: var(--line); }
 .flow-shell .react-flow__minimap { width: 150px; height: 92px; margin: 16px; border: 1px solid var(--line); border-radius: 7px; background: rgba(251,249,244,.92); }
-.flow-node { width: 100%; height: 100%; position: relative; padding: 16px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--node-color); border-radius: 8px; box-shadow: 0 9px 20px rgba(64,50,32,.1); overflow: hidden; }
+.flow-node { width: 100%; height: 100%; position: relative; padding: 16px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--node-color); border-radius: 8px; box-shadow: 0 9px 20px rgba(64,50,32,.1); overflow: visible; }
 .flow-node.selected { box-shadow: 0 0 0 2px rgba(157,70,40,.28), 0 12px 24px rgba(64,50,32,.12); }
 .react-flow__node.connection-muted { opacity: .24; transition: opacity .15s; }
 .react-flow__node.connection-endpoint { opacity: 1; z-index: 6 !important; }
@@ -295,10 +295,11 @@ button { color: inherit; }
 .flow-node.text > strong { font-size: 1.12rem; }
 .flow-node.group { background: rgba(157,70,40,.035); border: 1px dashed rgba(157,70,40,.5); border-left: 1px dashed rgba(157,70,40,.5); box-shadow: none; overflow: visible; }
 .group-label { position: absolute; left: 12px; top: -25px; color: var(--rust); font: .65rem 'DM Mono'; text-transform: uppercase; letter-spacing: .1em; }
-.flow-node .react-flow__handle { width: 15px; height: 34px; border: 0; border-radius: 10px; background: transparent; }
-.flow-node .react-flow__handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; transform: translate(-50%, -50%); border: 2px solid var(--paper); border-radius: 50%; background: var(--node-color); }
-.flow-node .react-flow__handle-left { left: -8px; }
-.flow-node .react-flow__handle-right { right: -8px; }
+.flow-node .react-flow__handle { width: 22px; height: 46px; border: 0; border-radius: 12px; background: transparent; }
+.flow-node .react-flow__handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); border: 3px solid var(--paper); border-radius: 50%; background: var(--node-color); box-shadow: 0 1px 4px rgba(49,39,27,.32); }
+.flow-node .react-flow__handle-left { left: -11px; }
+.flow-node .react-flow__handle-right { right: -13px; }
+.flow-node .react-flow__handle.target::after { display: none; }
 .react-flow__edge-textbg { rx: 4; ry: 4; }
 .react-flow__edge { cursor: pointer; }
 .react-flow__edge.selected .react-flow__edge-path { stroke-width: 3 !important; }
