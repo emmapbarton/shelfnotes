@@ -52,6 +52,7 @@ export function RichTextEditor({
   const editorRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const initialisedRef = useRef(false)
+  const selectionRef = useRef<Range | null>(null)
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(
     null,
   )
@@ -66,13 +67,40 @@ export function RichTextEditor({
     void refreshPrivateImages(editorRef.current)
   }, [value])
 
+  const rememberSelection = () => {
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection?.rangeCount) return
+    const range = selection.getRangeAt(0)
+    if (editor.contains(range.commonAncestorContainer)) {
+      selectionRef.current = range.cloneRange()
+    }
+  }
+
+  const restoreSelection = () => {
+    const selection = window.getSelection()
+    if (!selection || !selectionRef.current) return
+    selection.removeAllRanges()
+    selection.addRange(selectionRef.current)
+  }
+
+  const collapseSelectionToEnd = () => {
+    const selection = window.getSelection()
+    if (!selection?.rangeCount || selection.isCollapsed) return
+    selection.collapseToEnd()
+  }
+
   const runCommand = (command: string, commandValue?: string) => {
-    editorRef.current?.focus()
+    editorRef.current?.focus({ preventScroll: true })
+    restoreSelection()
     document.execCommand(command, false, commandValue)
+    collapseSelectionToEnd()
+    rememberSelection()
     emitChange()
   }
 
   const emitChange = () => {
+    rememberSelection()
     onChange(editorRef.current?.innerHTML ?? '')
   }
 
@@ -183,10 +211,17 @@ export function RichTextEditor({
         ref={editorRef}
         className="rich-editor"
         contentEditable
+        role="textbox"
+        aria-label="Your thought"
+        aria-multiline="true"
         suppressContentEditableWarning
         data-placeholder="What made you pause?"
         onInput={emitChange}
+        onKeyUp={rememberSelection}
+        onMouseUp={rememberSelection}
+        onFocus={rememberSelection}
         onClick={(event) => {
+          rememberSelection()
           const target = event.target
           if (target instanceof HTMLImageElement) {
             setSelectedImage(target)

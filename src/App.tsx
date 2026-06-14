@@ -592,7 +592,10 @@ function NoteForm({ book, note, user, onClose, onSave }: { book: Book; note: Not
           <label>To page<input type="number" min="0" value={pageEnd} onChange={(event) => setPageEnd(Number(event.target.value))} /></label>
           <label>Type<select value={kind} onChange={(event) => setKind(event.target.value as Note['kind'])}><option value="note">Note</option><option value="quote">Quote</option><option value="question">Question</option></select></label>
         </div>
-        <label>Your thought<RichTextEditor value={content} onChange={setContent} user={user} bookId={book.id} /></label>
+        <div className="form-field">
+          <span>Your thought</span>
+          <RichTextEditor value={content} onChange={setContent} user={user} bookId={book.id} />
+        </div>
         {validationError && <p className="error">{validationError}</p>}
         <label>Tags<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="freedom, memory, language" /></label>
         <div className="form-actions"><button type="button" className="button subtle" onClick={onClose}>Cancel</button><button className="button primary">{note ? 'Save changes' : 'Save note'}</button></div>
